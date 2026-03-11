@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  SALES
+}
+
+enum PaymentMethod {
+  CASH
+  QR_CODE
+  CREDIT_CARD
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum InventoryMovementType {
+  SALE
+  RECEIVE
+  ADJUSTMENT
+}
+
+enum InventoryApprovalStatus {
+  APPROVED
+  PENDING_APPROVAL
+  REJECTED
+}
+
+model StoreSetting {
+  id                    String   @id @default("default")
+  monthlySalesGoalCents Int      @default(0)
+  themePrimaryHex       String   @default("#111315")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Product {
+  id                 String              @id @default(cuid())
+  name               String
+  sku                String              @unique
+  costCents          Int                 @default(0)
+  priceCents         Int
+  stockQty           Int                 @default(0)
+  isSellable         Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  saleItems          SaleItem[]
+  barcodes           ProductBarcode[]
+  inventoryMovements InventoryMovement[]
+  priceLogs          ProductPriceLog[]
+
+  @@index([name])
+  @@index([isSellable, stockQty])
+}
+
+model Sale {
+  id            String              @id @default(cuid())
+  createdAt     DateTime            @default(now())
+  totalCents    Int
+  paymentMethod PaymentMethod       @default(CASH)
+  idempotencyKey String?
+  soldByUserId  String
+  shiftId       String?
+  soldByUser    User                @relation(fields: [soldByUserId], references: [id], onDelete: Restrict)
+  shift         Shift?              @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  items         SaleItem[]
+  movements     InventoryMovement[]
+
+  @@index([createdAt])
+  @@index([soldByUserId])
+  @@index([shiftId])
+  @@index([paymentMethod, createdAt])
+  @@index([idempotencyKey])
+  @@unique([soldByUserId, idempotencyKey])
+}
+
+model SaleItem {
+  id            String   @id @default(cuid())
+  saleId        String
+  productId     String
+  quantity      Int
+  unitPriceCents Int
+  sale          Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model User {
+  id                       String              @id @default(cuid())
+  email                    String              @unique
+  passwordHash             String
+  role                     UserRole            @default(SALES)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  soldSales                Sale[]
+  openedShifts             Shift[]             @relation("OpenedShifts")
+  closedShifts             Shift[]             @relation("ClosedShifts")
+  createdInventoryMovements InventoryMovement[] @relation("CreatedInventoryMovements")
+  approvedInventoryMovements InventoryMovement[] @relation("ApprovedInventoryMovements")
+  rejectedInventoryMovements InventoryMovement[] @relation("RejectedInventoryMovements")
+  changedProductPrices      ProductPriceLog[]   @relation("ChangedProductPrices")
+
+  @@index([role])
+}
+
+model Shift {
+  id             String      @id @default(cuid())
+  status         ShiftStatus @default(OPEN)
+  openedAt       DateTime    @default(now())
+  closedAt       DateTime?
+  openedByUserId String
+  closedByUserId String?
+  openedByUser   User        @relation("OpenedShifts", fields: [openedByUserId], references: [id], onDelete: Restrict)
+  closedByUser   User?       @relation("ClosedShifts", fields: [closedByUserId], references: [id], onDelete: Restrict)
+  sales          Sale[]
+
+  @@index([status])
+  @@index([openedAt])
+  @@index([openedByUserId, status])
+}
+
+model ProductBarcode {
+  id        String   @id @default(cuid())
+  productId String
+  code      String   @unique
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id             String                  @id @default(cuid())
+  createdAt      DateTime                @default(now())
+  productId      String
+  saleId         String?
+  createdByUserId String
+  approvedByUserId String?
+  rejectedByUserId String?
+  movementType   InventoryMovementType
+  approvalStatus InventoryApprovalStatus @default(APPROVED)
+  quantityDelta  Int
+  quantityBefore Int
+  quantityAfter  Int
+  reason         String
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  product        Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sale           Sale?                   @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  createdByUser  User                    @relation("CreatedInventoryMovements", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedByUser User?                   @relation("ApprovedInventoryMovements", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  rejectedByUser User?                   @relation("RejectedInventoryMovements", fields: [rejectedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([approvalStatus, createdAt])
+  @@index([saleId])
+}
+
+model ProductPriceLog {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  productId         String?
+  productName       String
+  sku               String
+  changedByUserId   String
+  previousCostCents Int
+  previousPriceCents Int
+  nextCostCents     Int
+  nextPriceCents    Int
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  changedByUser     User     @relation("ChangedProductPrices", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([productId, createdAt])
+  @@index([changedByUserId, createdAt])
+}
