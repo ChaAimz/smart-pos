@@ -46,7 +46,6 @@ type ProductRow = {
 
 type ProductData = {
   currencyCode: StoreCurrencyCode;
-  dbStatus: "up" | "down";
   hasMoreProducts: boolean;
   matchingProductsCount: number;
   products: ProductRow[];
@@ -446,7 +445,6 @@ async function getProductData(query: string): Promise<ProductData> {
 
     return {
       currencyCode: await currencyCodePromise,
-      dbStatus: "up",
       hasMoreProducts,
       matchingProductsCount,
       products,
@@ -456,7 +454,6 @@ async function getProductData(query: string): Promise<ProductData> {
   } catch {
     return {
       currencyCode: "ZAR",
-      dbStatus: "down",
       hasMoreProducts: false,
       matchingProductsCount: 0,
       products: [],
@@ -558,7 +555,6 @@ export default async function OwnerProductsPage({
   return (
     <OwnerShell
       activeNav="products"
-      dbStatus={data.dbStatus}
       mainClassName="h-[calc(100dvh-3.5rem)] min-h-0 overflow-hidden"
       pageTitle="Products"
       userEmail={sessionUser.email}
@@ -574,30 +570,30 @@ export default async function OwnerProductsPage({
         variant="error"
       />
 
-      <section className="shrink-0 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="py-4">
-          <CardHeader>
-            <CardDescription>Total Products</CardDescription>
-            <CardTitle className="text-3xl">{data.totalCount}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="py-4">
-          <CardHeader>
-            <CardDescription>Sellable</CardDescription>
-            <CardTitle className="text-3xl">{data.sellableCount}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="py-4">
-          <CardHeader>
-            <CardDescription>Blocked</CardDescription>
-            <CardTitle className="text-3xl">{blockedCount}</CardTitle>
-          </CardHeader>
-        </Card>
-      </section>
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <section className="shrink-0 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card className="py-4">
+            <CardHeader>
+              <CardDescription>Total Products</CardDescription>
+              <CardTitle className="text-3xl">{data.totalCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="py-4">
+            <CardHeader>
+              <CardDescription>Sellable</CardDescription>
+              <CardTitle className="text-3xl">{data.sellableCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="py-4">
+            <CardHeader>
+              <CardDescription>Blocked</CardDescription>
+              <CardTitle className="text-3xl">{blockedCount}</CardTitle>
+            </CardHeader>
+          </Card>
+        </section>
 
-      <div className="mt-6 min-h-0 flex-1">
-        <Card className="h-full min-h-0">
-          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-2">
+        <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
+          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-4">
             <ProductsVirtualTable
               key={query || "__all_products__"}
               currencyCode={data.currencyCode}

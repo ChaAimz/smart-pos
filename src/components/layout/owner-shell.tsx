@@ -6,11 +6,13 @@ import {
   LayoutDashboard,
   Package,
   Settings,
+  UserRound,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -21,14 +23,21 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ContentShell } from "@/components/layout/content-shell";
 import { AppBrand } from "@/components/layout/app-brand";
+import { LogoutMenuItem } from "@/components/layout/logout-menu-item";
 
 type OwnerShellProps = {
   activeNav: "overview" | "products" | "reports" | "activity" | "staff" | "settings";
   children: React.ReactNode;
-  dbStatus: "up" | "down";
   mainClassName?: string;
   pageTitle: string;
   userEmail: string;
@@ -36,6 +45,19 @@ type OwnerShellProps = {
 
 const OWNER_SIDEBAR_COLLAPSED_KEY = "owner-sidebar-collapsed";
 const OWNER_SIDEBAR_COLLAPSED_EVENT = "owner-sidebar-collapsed-change";
+
+function isIpadDevice() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent;
+  const isLegacyIpad = /\biPad\b/i.test(userAgent);
+  const isModernIpad =
+    navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+
+  return isLegacyIpad || isModernIpad;
+}
 
 function SidebarMenuItem({
   active = false,
@@ -90,11 +112,29 @@ function SidebarMenuItem({
 export function OwnerShell({
   activeNav,
   children,
-  dbStatus,
   mainClassName,
   pageTitle,
   userEmail,
 }: OwnerShellProps) {
+  const displayName = userEmail.split("@")[0] || "Owner";
+  const initials = displayName.slice(0, 2).toUpperCase();
+  const avatarMenuItemClass = "gap-2 py-2";
+  const isIpadAutoCollapse = useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined") {
+        return () => undefined;
+      }
+
+      window.addEventListener("resize", onStoreChange);
+      window.addEventListener("orientationchange", onStoreChange);
+      return () => {
+        window.removeEventListener("resize", onStoreChange);
+        window.removeEventListener("orientationchange", onStoreChange);
+      };
+    },
+    () => isIpadDevice(),
+    () => false
+  );
   const isCollapsed = useSyncExternalStore(
     (onStoreChange) => {
       if (typeof window === "undefined") {
@@ -122,8 +162,13 @@ export function OwnerShell({
     },
     () => false
   );
+  const sidebarCollapsed = isIpadAutoCollapse || isCollapsed;
 
   const toggleSidebar = () => {
+    if (isIpadAutoCollapse) {
+      return;
+    }
+
     const next = !isCollapsed;
     window.localStorage.setItem(OWNER_SIDEBAR_COLLAPSED_KEY, String(next));
     window.dispatchEvent(new Event(OWNER_SIDEBAR_COLLAPSED_EVENT));
@@ -131,73 +176,88 @@ export function OwnerShell({
 
   return (
     <div className="min-h-screen bg-muted/40">
+      <form id="owner-logout-form" action="/api/auth/logout" method="post" className="hidden" />
       <div
         className={cn(
           "grid min-h-screen transition-[grid-template-columns] duration-200",
-          isCollapsed ? "md:grid-cols-[72px_1fr]" : "md:grid-cols-[240px_1fr]",
+          sidebarCollapsed ? "md:grid-cols-[72px_1fr]" : "md:grid-cols-[240px_1fr]",
         )}
       >
-        <aside className="hidden border-r bg-background md:flex md:flex-col">
+        <aside className="hidden border-r bg-background md:sticky md:top-0 md:flex md:h-screen md:flex-col">
           <div
             className={cn(
-              "flex h-14 items-center border-b",
-              isCollapsed ? "justify-center px-2" : "px-4",
+              "flex h-14 shrink-0 items-center border-b",
+              sidebarCollapsed ? "justify-center px-2" : "px-4",
             )}
           >
             <button
               type="button"
               onClick={toggleSidebar}
+              disabled={isIpadAutoCollapse}
               className={cn(
                 "inline-flex w-full rounded-md transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isCollapsed ? "justify-center px-1 py-1" : "justify-start px-2 py-1"
+                "disabled:cursor-default disabled:hover:bg-transparent disabled:opacity-100",
+                sidebarCollapsed ? "justify-center px-1 py-1" : "justify-start px-2 py-1"
               )}
-              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={
+                isIpadAutoCollapse
+                  ? "Sidebar auto-collapsed on iPad"
+                  : sidebarCollapsed
+                    ? "Expand sidebar"
+                    : "Collapse sidebar"
+              }
+              title={
+                isIpadAutoCollapse
+                  ? "Sidebar auto-collapsed on iPad"
+                  : sidebarCollapsed
+                    ? "Expand sidebar"
+                    : "Collapse sidebar"
+              }
             >
-              <AppBrand hideLabel={isCollapsed} />
+              <AppBrand hideLabel={sidebarCollapsed} />
             </button>
           </div>
 
-          <div className="flex-1 p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <nav className="flex flex-col gap-1">
               <SidebarMenuItem
                 active={activeNav === "overview"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner"
                 icon={LayoutDashboard}
                 label="Overview"
               />
               <SidebarMenuItem
                 active={activeNav === "products"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner/products"
                 icon={Package}
                 label="Products"
               />
               <SidebarMenuItem
                 active={activeNav === "reports"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner/reports"
                 icon={BarChart3}
                 label="Reports"
               />
               <SidebarMenuItem
                 active={activeNav === "activity"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner/activity"
                 icon={Activity}
                 label="Activity Log"
               />
               <SidebarMenuItem
                 active={activeNav === "staff"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner/staff"
                 icon={Users}
                 label="Staff"
               />
               <SidebarMenuItem
                 active={activeNav === "settings"}
-                collapsed={isCollapsed}
+                collapsed={sidebarCollapsed}
                 href="/owner/settings"
                 icon={Settings}
                 label="Settings"
@@ -205,22 +265,12 @@ export function OwnerShell({
             </nav>
           </div>
 
-          <div className={cn("border-t py-3", isCollapsed ? "px-2" : "px-4")}>
-            {isCollapsed ? (
-              <p className="text-center text-xs text-muted-foreground">Owner</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground">Owner account</p>
-                <p className="truncate text-sm font-medium">{userEmail}</p>
-              </>
-            )}
-          </div>
         </aside>
 
         <ContentShell
           headerClassName="sticky top-0 z-10 flex h-14 items-center border-b bg-background px-4 md:px-6"
           mainClassName={cn(
-            "flex min-h-0 flex-1 flex-col px-4 pt-4 pb-3 md:px-6 md:pt-6 md:pb-4",
+            "flex min-h-0 flex-1 flex-col p-4",
             mainClassName
           )}
           header={
@@ -240,16 +290,75 @@ export function OwnerShell({
                   </BreadcrumbList>
                 </Breadcrumb>
               </div>
-              <div className="ml-4 flex items-center gap-2">
-                <Badge variant="outline">OWNER</Badge>
-                <Badge variant={dbStatus === "up" ? "default" : "secondary"}>
-                  DB {dbStatus.toUpperCase()}
-                </Badge>
-                <form action="/api/auth/logout" method="post">
-                  <Button variant="outline" size="sm" type="submit">
-                    Logout
-                  </Button>
-                </form>
+              <div className="ml-4 flex items-center">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="size-10 rounded-full border-border/70 p-0"
+                      aria-label="Open owner profile menu"
+                    >
+                      <Avatar>
+                        <AvatarFallback>{initials}</AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-64">
+                    <DropdownMenuLabel className="flex items-center gap-2">
+                      <Avatar size="sm">
+                        <AvatarFallback>{initials}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate font-medium">{displayName}</span>
+                        <span className="truncate text-xs text-muted-foreground">{userEmail}</span>
+                      </div>
+                    </DropdownMenuLabel>
+                    <div className="my-1 border-t" />
+                    <DropdownMenuItem disabled className={avatarMenuItemClass}>
+                      <UserRound aria-hidden="true" />
+                      Owner account
+                    </DropdownMenuItem>
+                    <div className="my-1 border-t" />
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner">
+                        <LayoutDashboard aria-hidden="true" />
+                        Overview
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/products">
+                        <Package aria-hidden="true" />
+                        Products
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/reports">
+                        <BarChart3 aria-hidden="true" />
+                        Reports
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/activity">
+                        <Activity aria-hidden="true" />
+                        Activity Log
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/staff">
+                        <Users aria-hidden="true" />
+                        Staff
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/settings">
+                        <Settings aria-hidden="true" />
+                        Settings
+                      </Link>
+                    </DropdownMenuItem>
+                    <div className="my-1 border-t" />
+                    <LogoutMenuItem logoutFormId="owner-logout-form" className={avatarMenuItemClass} />
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </>
           }

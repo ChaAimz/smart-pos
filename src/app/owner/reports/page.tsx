@@ -36,7 +36,6 @@ type ReportData = {
     revenueCents: number;
     salesCount: number;
   }>;
-  dbStatus: "up" | "down";
   revenueCents: number;
   salesCount: number;
   topProducts: Array<{
@@ -214,7 +213,6 @@ async function getReportData(from: Date, toExclusive: Date): Promise<ReportData>
       averageTicketCents,
       currencyCode,
       dailySummary,
-      dbStatus: "up",
       revenueCents,
       salesCount,
       topProducts,
@@ -224,7 +222,6 @@ async function getReportData(from: Date, toExclusive: Date): Promise<ReportData>
       averageTicketCents: 0,
       currencyCode: "ZAR",
       dailySummary: [],
-      dbStatus: "down",
       revenueCents: 0,
       salesCount: 0,
       topProducts: [],
@@ -243,12 +240,11 @@ export default async function OwnerReportsPage({
   return (
     <OwnerShell
       activeNav="reports"
-      dbStatus={data.dbStatus}
       mainClassName="h-[calc(100dvh-3.5rem)] min-h-0 overflow-hidden"
       pageTitle="Reports"
       userEmail={sessionUser.email}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <Card className="shrink-0 gap-0">
           <CardHeader>
             <CardTitle className="text-base">Report Range</CardTitle>

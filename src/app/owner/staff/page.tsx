@@ -37,7 +37,6 @@ type StaffPageProps = {
 };
 
 type StaffData = {
-  dbStatus: "up" | "down";
   ownerCount: number;
   managerCount: number;
   salesCount: number;
@@ -191,7 +190,6 @@ async function getStaffData(): Promise<StaffData> {
     ]);
 
     return {
-      dbStatus: "up",
       ownerCount,
       managerCount,
       salesCount,
@@ -199,7 +197,6 @@ async function getStaffData(): Promise<StaffData> {
     };
   } catch {
     return {
-      dbStatus: "down",
       ownerCount: 0,
       managerCount: 0,
       salesCount: 0,
@@ -248,7 +245,6 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
   return (
     <OwnerShell
       activeNav="staff"
-      dbStatus={data.dbStatus}
       mainClassName="h-[calc(100dvh-3.5rem)] min-h-0 overflow-hidden"
       pageTitle="Staff"
       userEmail={sessionUser.email}
@@ -264,7 +260,7 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
         variant="error"
       />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <section className="shrink-0 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="py-4">
             <CardHeader>

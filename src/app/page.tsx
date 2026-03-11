@@ -48,7 +48,6 @@ type DashboardData = {
     revenueCents: number;
     salesCount: number;
   }>;
-  dbStatus: "up" | "down";
   paymentMix: Array<{
     method: "CASH" | "QR_CODE" | "CREDIT_CARD";
     count: number;
@@ -315,7 +314,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
     return {
       currencyCode,
       dailyTrend,
-      dbStatus: "up",
       paymentMix,
       thisMonthRevenueCents,
       monthlyGoalCents,
@@ -342,7 +340,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
         revenueCents: 0,
         salesCount: 0,
       })),
-      dbStatus: "down",
       paymentMix: [
         { method: "CASH", count: 0, revenueCents: 0 },
         { method: "QR_CODE", count: 0, revenueCents: 0 },
@@ -432,25 +429,26 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
   return (
     <OwnerShell
       activeNav="overview"
-      dbStatus={data.dbStatus}
       pageTitle="Overview"
       userEmail={sessionUser.email}
     >
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Card className="py-4 xl:min-h-64">
-          <CardHeader className="h-full justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <CardDescription className="flex items-center gap-2">
+        <Card className="min-w-0 py-4 xl:min-h-64">
+          <CardHeader className="h-full min-w-0 justify-between gap-4">
+            <div className="min-w-0 flex flex-col gap-2">
+              <CardDescription className="flex min-w-0 items-center gap-2">
                 <ShoppingBag className="size-4 text-muted-foreground" aria-hidden="true" />
                 Today Sales
               </CardDescription>
-              <CardTitle className="text-3xl">{data.todaySalesCount}</CardTitle>
-              <CardDescription>Orders completed today</CardDescription>
+              <CardTitle className="min-w-0 break-words text-3xl leading-tight">
+                {data.todaySalesCount}
+              </CardTitle>
+              <CardDescription className="min-w-0 break-words">Orders completed today</CardDescription>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">Revenue pace</span>
-                <Badge variant="secondary" className={dayGoalTone.badgeClassName}>
+            <div className="min-w-0 flex flex-col gap-2">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-xs">
+                <span className="min-w-0 flex-1 break-words text-muted-foreground">Revenue pace</span>
+                <Badge variant="secondary" className={`shrink-0 ${dayGoalTone.badgeClassName}`}>
                   {dayGoalTone.label}
                 </Badge>
               </div>
@@ -460,26 +458,30 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                   style={{ width: `${dayGoalProgressWidth}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="min-w-0 break-words text-xs text-muted-foreground">
                 Avg order {formatPrice(todayAverageOrderCents, data.currencyCode)}
               </p>
             </div>
           </CardHeader>
         </Card>
-        <Card className="py-4 xl:min-h-64">
-          <CardHeader className="h-full justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <CardDescription className="flex items-center gap-2">
+        <Card className="min-w-0 py-4 xl:min-h-64">
+          <CardHeader className="h-full min-w-0 justify-between gap-4">
+            <div className="min-w-0 flex flex-col gap-2">
+              <CardDescription className="flex min-w-0 items-center gap-2">
                 <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
                 Today Revenue
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.todayRevenueCents, data.currencyCode)}</CardTitle>
-              <CardDescription>Daily goal progress</CardDescription>
+              <CardTitle className="min-w-0 break-words text-3xl leading-tight">
+                {formatPrice(data.todayRevenueCents, data.currencyCode)}
+              </CardTitle>
+              <CardDescription className="min-w-0 break-words">Daily goal progress</CardDescription>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">{dayGoalPercentText} of {formatPrice(data.dailyGoalCents, data.currencyCode)}</span>
-                <Badge variant="secondary" className={dayGoalTone.badgeClassName}>
+            <div className="min-w-0 flex flex-col gap-2">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-xs">
+                <span className="min-w-0 flex-1 break-words text-muted-foreground">
+                  {dayGoalPercentText} of {formatPrice(data.dailyGoalCents, data.currencyCode)}
+                </span>
+                <Badge variant="secondary" className={`shrink-0 ${dayGoalTone.badgeClassName}`}>
                   {dayGoalTone.label}
                 </Badge>
               </div>
@@ -489,7 +491,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                   style={{ width: `${dayGoalProgressWidth}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="min-w-0 break-words text-xs text-muted-foreground">
                 {dayGoalGapCents > 0
                   ? `${formatPrice(dayGoalGapCents, data.currencyCode)} left to goal`
                   : "Goal reached"}
@@ -497,22 +499,24 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
             </div>
           </CardHeader>
         </Card>
-        <Card className="py-4 xl:min-h-64">
-          <CardHeader className="h-full justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <CardDescription className="flex items-center gap-2">
+        <Card className="min-w-0 py-4 xl:min-h-64">
+          <CardHeader className="h-full min-w-0 justify-between gap-4">
+            <div className="min-w-0 flex flex-col gap-2">
+              <CardDescription className="flex min-w-0 items-center gap-2">
                 <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
                 Month Revenue
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.thisMonthRevenueCents, data.currencyCode)}</CardTitle>
-              <CardDescription>Monthly goal progress</CardDescription>
+              <CardTitle className="min-w-0 break-words text-3xl leading-tight">
+                {formatPrice(data.thisMonthRevenueCents, data.currencyCode)}
+              </CardTitle>
+              <CardDescription className="min-w-0 break-words">Monthly goal progress</CardDescription>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">
+            <div className="min-w-0 flex flex-col gap-2">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-xs">
+                <span className="min-w-0 flex-1 break-words text-muted-foreground">
                   {monthGoalPercentText} of {formatPrice(data.monthlyGoalCents, data.currencyCode)}
                 </span>
-                <Badge variant="secondary" className={monthGoalTone.badgeClassName}>
+                <Badge variant="secondary" className={`shrink-0 ${monthGoalTone.badgeClassName}`}>
                   {monthGoalTone.label}
                 </Badge>
               </div>
@@ -522,7 +526,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                   style={{ width: `${monthGoalProgressWidth}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="min-w-0 break-words text-xs text-muted-foreground">
                 {monthGoalGapCents > 0
                   ? `${formatPrice(monthGoalGapCents, data.currencyCode)} left this month`
                   : "Monthly goal reached"}
@@ -530,21 +534,21 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
             </div>
           </CardHeader>
         </Card>
-        <Card className="py-4 xl:min-h-64">
-          <CardHeader className="h-full justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <CardDescription className="flex items-center gap-2">
+        <Card className="min-w-0 py-4 xl:min-h-64">
+          <CardHeader className="h-full min-w-0 justify-between gap-4">
+            <div className="min-w-0 flex flex-col gap-2">
+              <CardDescription className="flex min-w-0 items-center gap-2">
                 <Target className="size-4 text-muted-foreground" aria-hidden="true" />
                 Goal Progress
               </CardDescription>
-              <CardTitle className="text-3xl">{dayGoalPercentText}</CardTitle>
-              <CardDescription>Today vs month target</CardDescription>
+              <CardTitle className="min-w-0 break-words text-3xl leading-tight">{dayGoalPercentText}</CardTitle>
+              <CardDescription className="min-w-0 break-words">Today vs month target</CardDescription>
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Today</span>
-                  <span className="font-medium tabular-nums">{dayGoalPercentText}</span>
+            <div className="min-w-0 flex flex-col gap-3">
+              <div className="min-w-0 flex flex-col gap-1">
+                <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 flex-1 break-words text-muted-foreground">Today</span>
+                  <span className="shrink-0 font-medium tabular-nums">{dayGoalPercentText}</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
@@ -553,10 +557,10 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                   />
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Month</span>
-                  <span className="font-medium tabular-nums">{monthGoalPercentText}</span>
+              <div className="min-w-0 flex flex-col gap-1">
+                <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 flex-1 break-words text-muted-foreground">Month</span>
+                  <span className="shrink-0 font-medium tabular-nums">{monthGoalPercentText}</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
@@ -568,20 +572,24 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
             </div>
           </CardHeader>
         </Card>
-        <Card className="py-4 xl:min-h-64">
-          <CardHeader className="h-full justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <CardDescription className="flex items-center gap-2">
+        <Card className="min-w-0 py-4 xl:min-h-64">
+          <CardHeader className="h-full min-w-0 justify-between gap-4">
+            <div className="min-w-0 flex flex-col gap-2">
+              <CardDescription className="flex min-w-0 items-center gap-2">
                 <Package className="size-4 text-muted-foreground" aria-hidden="true" />
                 Inventory Value
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.inventorySellValueCents, data.currencyCode)}</CardTitle>
-              <CardDescription>Estimated sell value in stock</CardDescription>
+              <CardTitle className="min-w-0 break-words text-3xl leading-tight">
+                {formatPrice(data.inventorySellValueCents, data.currencyCode)}
+              </CardTitle>
+              <CardDescription className="min-w-0 break-words">Estimated sell value in stock</CardDescription>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Cost</span>
-                <span className="font-medium tabular-nums">{formatPrice(data.inventoryCostValueCents, data.currencyCode)}</span>
+            <div className="min-w-0 flex flex-col gap-2">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-xs">
+                <span className="min-w-0 flex-1 break-words text-muted-foreground">Cost</span>
+                <span className="shrink-0 break-words text-right font-medium tabular-nums">
+                  {formatPrice(data.inventoryCostValueCents, data.currencyCode)}
+                </span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
@@ -591,7 +599,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                   style={{ width: `${inventoryMarginPct}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="min-w-0 break-words text-xs text-muted-foreground">
                 Margin {inventoryMarginPositive ? "+" : "-"}
                 {formatPrice(Math.abs(inventoryMarginCents), data.currencyCode)}
               </p>
@@ -600,7 +608,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
         </Card>
       </section>
 
-      <section className="mt-6">
+      <section className="mt-4">
         <OverviewCharts
           currencyCode={data.currencyCode}
           dailyTrend={data.dailyTrend}

@@ -20,7 +20,6 @@ import {
 import { FlashToast } from "@/components/ui/flash-toast";
 import { Input } from "@/components/ui/input";
 import { requireOwnerSession } from "@/lib/owner-session";
-import { prisma } from "@/lib/prisma";
 import {
   formatCurrencyFromCents,
   getStoreCurrencyOptions,
@@ -44,7 +43,6 @@ type OwnerSettingsPageProps = {
 
 type OwnerSettingsData = {
   currencyCode: StoreCurrencyCode;
-  dbStatus: "up" | "down";
   monthlyGoalCents: number;
   themePrimaryHex: string;
 };
@@ -157,22 +155,11 @@ async function getOwnerSettingsData(): Promise<OwnerSettingsData> {
     getStoreCurrencyCode(),
   ]);
 
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return {
-      dbStatus: "up",
-      currencyCode,
-      monthlyGoalCents,
-      themePrimaryHex,
-    };
-  } catch {
-    return {
-      dbStatus: "down",
-      currencyCode,
-      monthlyGoalCents,
-      themePrimaryHex,
-    };
-  }
+  return {
+    currencyCode,
+    monthlyGoalCents,
+    themePrimaryHex,
+  };
 }
 
 export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsPageProps) {
@@ -188,7 +175,6 @@ export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsP
   return (
     <OwnerShell
       activeNav="settings"
-      dbStatus={data.dbStatus}
       pageTitle="Settings"
       userEmail={sessionUser.email}
     >

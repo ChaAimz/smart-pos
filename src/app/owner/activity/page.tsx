@@ -27,7 +27,6 @@ type OwnerActivityPageProps = {
 };
 
 type OwnerActivityPageData = {
-  dbStatus: "up" | "down";
   filter: OwnerActivityFilter;
   hasMore: boolean;
   query: string;
@@ -54,7 +53,6 @@ async function getOwnerActivityPageData(params: {
     });
 
     return {
-      dbStatus: "up",
       filter,
       hasMore: result.hasMore,
       query,
@@ -63,7 +61,6 @@ async function getOwnerActivityPageData(params: {
     };
   } catch {
     return {
-      dbStatus: "down",
       filter,
       hasMore: false,
       query,
@@ -85,12 +82,11 @@ export default async function OwnerActivityPage({ searchParams }: OwnerActivityP
   return (
     <OwnerShell
       activeNav="activity"
-      dbStatus={data.dbStatus}
       mainClassName="h-[calc(100dvh-3.5rem)] min-h-0 overflow-hidden pb-3 md:pb-4"
       pageTitle="Activity Log"
       userEmail={sessionUser.email}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <section className="shrink-0 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card className="py-4">
             <CardHeader>

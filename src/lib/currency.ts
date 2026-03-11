@@ -38,10 +38,12 @@ export function formatCurrencyFromCents(
   }
 ) {
   const locale = options?.locale ?? "en-US";
+  const currencyDisplay = currencyCode === "ZAR" ? "narrowSymbol" : "symbol";
 
   return new Intl.NumberFormat(locale, {
     style: "currency",
     currency: currencyCode,
+    currencyDisplay,
     maximumFractionDigits: options?.maximumFractionDigits,
     minimumFractionDigits: options?.minimumFractionDigits,
   }).format(cents / 100);
