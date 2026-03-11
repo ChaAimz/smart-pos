@@ -7,13 +7,15 @@ import { OwnerShell } from "@/components/layout/owner-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CardAction,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FlashToast } from "@/components/ui/flash-toast";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -23,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FlashToast } from "@/components/ui/flash-toast";
 import { hashPassword } from "@/lib/auth";
 import { requireOwnerSession } from "@/lib/owner-session";
 import { prisma } from "@/lib/prisma";
@@ -32,13 +33,14 @@ type StaffPageProps = {
   searchParams: Promise<{
     dialog?: string;
     error?: string;
+    item?: string;
     status?: string;
   }>;
 };
 
 type StaffData = {
-  ownerCount: number;
   managerCount: number;
+  ownerCount: number;
   salesCount: number;
   users: Array<{
     createdAt: Date;
@@ -48,20 +50,36 @@ type StaffData = {
   }>;
 };
 
+type StaffDialogItem = {
+  createdAt: Date;
+  email: string;
+  id: string;
+  role: UserRole;
+};
+
+type StaffDialogMode = "new" | "edit" | "delete";
+
 const statusMessages: Record<string, string> = {
-  role_updated: "Staff role updated.",
   staff_created: "Staff account created.",
+  staff_deleted: "Staff account deleted.",
+  staff_updated: "Staff account updated.",
 };
 
 const errorMessages: Record<string, string> = {
   duplicate_email: "Email already exists.",
-  invalid_fields: "Please provide valid email, password (min 8 chars), and role.",
+  invalid_fields: "Please provide valid email, role, and password (minimum 8 characters when set).",
   invalid_role: "Invalid role value.",
-  last_owner: "Cannot demote the last owner account.",
+  last_owner: "Cannot modify or delete the last owner account.",
+  staff_in_use: "Cannot delete account with sales, shift, or inventory history.",
   user_not_found: "User not found.",
+  self_delete: "You cannot delete the currently signed-in owner account.",
+  self_role_change: "You cannot change your own role from this page.",
 };
 
-type StaffDialogMode = "new";
+const createdAtFormat = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function normalizeRole(value: FormDataEntryValue | null): UserRole | null {
   const role = String(value ?? "")
@@ -75,6 +93,55 @@ function normalizeRole(value: FormDataEntryValue | null): UserRole | null {
   return null;
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function revalidateOwnerStaffRelatedPaths() {
+  revalidatePath("/");
+  revalidatePath("/owner");
+  revalidatePath("/owner/staff");
+}
+
+function toDialogMode(value: string | undefined): StaffDialogMode | null {
+  if (value === "new" || value === "edit" || value === "delete") {
+    return value;
+  }
+
+  return null;
+}
+
+function buildStaffPageHref(input: {
+  dialog?: StaffDialogMode | null;
+  error?: string | null;
+  item?: string | null;
+  status?: string | null;
+}) {
+  const params = new URLSearchParams();
+
+  if (input.dialog) {
+    params.set("dialog", input.dialog);
+  }
+
+  const itemId = String(input.item ?? "").trim();
+  if (input.dialog && input.dialog !== "new" && itemId) {
+    params.set("item", itemId);
+  }
+
+  const error = String(input.error ?? "").trim();
+  if (error) {
+    params.set("error", error);
+  }
+
+  const status = String(input.status ?? "").trim();
+  if (status) {
+    params.set("status", status);
+  }
+
+  const search = params.toString();
+  return search ? `/owner/staff?${search}` : "/owner/staff";
+}
+
 async function createStaffAction(formData: FormData) {
   "use server";
 
@@ -86,9 +153,8 @@ async function createStaffAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const role = normalizeRole(formData.get("role"));
 
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  if (!isValidEmail || password.length < 8 || !role) {
-    redirect("/owner/staff?dialog=new&error=invalid_fields");
+  if (!isValidEmail(email) || password.length < 8 || !role) {
+    redirect(buildStaffPageHref({ dialog: "new", error: "invalid_fields" }));
   }
 
   try {
@@ -107,27 +173,110 @@ async function createStaffAction(formData: FormData) {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      redirect("/owner/staff?dialog=new&error=duplicate_email");
+      redirect(buildStaffPageHref({ dialog: "new", error: "duplicate_email" }));
     }
 
     throw error;
   }
 
-  revalidatePath("/");
-  revalidatePath("/owner");
-  revalidatePath("/owner/staff");
-  redirect("/owner/staff?status=staff_created");
+  revalidateOwnerStaffRelatedPaths();
+  redirect(buildStaffPageHref({ status: "staff_created" }));
 }
 
-async function updateStaffRoleAction(formData: FormData) {
+async function updateStaffAction(formData: FormData) {
   "use server";
 
-  await requireOwnerSession();
+  const sessionUser = await requireOwnerSession();
 
   const userId = String(formData.get("userId") ?? "").trim();
-  const nextRole = normalizeRole(formData.get("role"));
-  if (!userId || !nextRole) {
-    redirect("/owner/staff?error=invalid_role");
+  const email = String(formData.get("email") ?? "")
+    .trim()
+    .toLowerCase();
+  const role = normalizeRole(formData.get("role"));
+  const password = String(formData.get("password") ?? "");
+
+  if (!userId || !isValidEmail(email) || !role || (password && password.length < 8)) {
+    redirect(buildStaffPageHref({ dialog: "edit", item: userId, error: "invalid_fields" }));
+  }
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      email: true,
+      id: true,
+      role: true,
+    },
+  });
+
+  if (!target) {
+    redirect(buildStaffPageHref({ error: "user_not_found" }));
+  }
+
+  if (target.id === sessionUser.userId && role !== target.role) {
+    redirect(buildStaffPageHref({ dialog: "edit", item: userId, error: "self_role_change" }));
+  }
+
+  if (target.role === "OWNER" && role !== "OWNER") {
+    const ownerCount = await prisma.user.count({
+      where: { role: "OWNER" },
+    });
+
+    if (ownerCount <= 1) {
+      redirect(buildStaffPageHref({ dialog: "edit", item: userId, error: "last_owner" }));
+    }
+  }
+
+  const updateData: Prisma.UserUpdateInput = {
+    email,
+    role,
+  };
+
+  if (password.length > 0) {
+    updateData.passwordHash = await hashPassword(password);
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      redirect(buildStaffPageHref({ dialog: "edit", item: userId, error: "duplicate_email" }));
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      redirect(buildStaffPageHref({ error: "user_not_found" }));
+    }
+
+    throw error;
+  }
+
+  revalidateOwnerStaffRelatedPaths();
+  redirect(buildStaffPageHref({ status: "staff_updated" }));
+}
+
+async function deleteStaffAction(formData: FormData) {
+  "use server";
+
+  const sessionUser = await requireOwnerSession();
+
+  const userId = String(formData.get("userId") ?? "").trim();
+  if (!userId) {
+    redirect(buildStaffPageHref({ error: "user_not_found" }));
+  }
+
+  if (userId === sessionUser.userId) {
+    redirect(buildStaffPageHref({ dialog: "delete", item: userId, error: "self_delete" }));
   }
 
   const target = await prisma.user.findUnique({
@@ -139,37 +288,46 @@ async function updateStaffRoleAction(formData: FormData) {
   });
 
   if (!target) {
-    redirect("/owner/staff?error=user_not_found");
+    redirect(buildStaffPageHref({ error: "user_not_found" }));
   }
 
-  if (target.role === nextRole) {
-    redirect("/owner/staff?status=role_updated");
-  }
-
-  if (target.role === "OWNER" && nextRole !== "OWNER") {
+  if (target.role === "OWNER") {
     const ownerCount = await prisma.user.count({
       where: { role: "OWNER" },
     });
 
     if (ownerCount <= 1) {
-      redirect("/owner/staff?error=last_owner");
+      redirect(buildStaffPageHref({ dialog: "delete", item: userId, error: "last_owner" }));
     }
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      role: nextRole,
-    },
-    select: {
-      id: true,
-    },
-  });
+  try {
+    await prisma.user.delete({
+      where: { id: userId },
+      select: {
+        id: true,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      redirect(buildStaffPageHref({ error: "user_not_found" }));
+    }
 
-  revalidatePath("/");
-  revalidatePath("/owner");
-  revalidatePath("/owner/staff");
-  redirect("/owner/staff?status=role_updated");
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2003" || error.code === "P2014")
+    ) {
+      redirect(buildStaffPageHref({ dialog: "delete", item: userId, error: "staff_in_use" }));
+    }
+
+    throw error;
+  }
+
+  revalidateOwnerStaffRelatedPaths();
+  redirect(buildStaffPageHref({ status: "staff_deleted" }));
 }
 
 async function getStaffData(): Promise<StaffData> {
@@ -190,45 +348,35 @@ async function getStaffData(): Promise<StaffData> {
     ]);
 
     return {
-      ownerCount,
       managerCount,
+      ownerCount,
       salesCount,
       users,
     };
   } catch {
     return {
-      ownerCount: 0,
       managerCount: 0,
+      ownerCount: 0,
       salesCount: 0,
       users: [],
     };
   }
 }
 
-const createdAtFormat = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-function toDialogMode(value: string | undefined): StaffDialogMode | null {
-  if (value === "new") {
-    return "new";
+async function getStaffDialogItem(userId: string): Promise<StaffDialogItem | null> {
+  if (!userId) {
+    return null;
   }
 
-  return null;
-}
-
-function buildStaffPageHref(input: {
-  dialog?: StaffDialogMode | null;
-}) {
-  const params = new URLSearchParams();
-
-  if (input.dialog) {
-    params.set("dialog", input.dialog);
-  }
-
-  const search = params.toString();
-  return search ? `/owner/staff?${search}` : "/owner/staff";
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      createdAt: true,
+      email: true,
+      id: true,
+      role: true,
+    },
+  });
 }
 
 export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
@@ -236,6 +384,12 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
   const params = await searchParams;
   const data = await getStaffData();
   const dialogMode = toDialogMode(params.dialog);
+  const dialogItemId = String(params.item ?? "").trim();
+  const dialogItem =
+    dialogMode && dialogMode !== "new"
+      ? await getStaffDialogItem(dialogItemId)
+      : null;
+
   const openDialogHref = buildStaffPageHref({ dialog: "new" });
   const closeDialogHref = buildStaffPageHref({});
 
@@ -291,7 +445,9 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
         <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
           <CardHeader className="shrink-0">
             <CardTitle className="text-base">Staff Directory</CardTitle>
-            <CardDescription>Change role per account from this table.</CardDescription>
+            <CardDescription>
+              Manage staff accounts with full create, update (including password), and delete controls.
+            </CardDescription>
             <CardAction>
               <Button asChild>
                 <Link href={openDialogHref}>Create Staff Account</Link>
@@ -318,69 +474,61 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    data.users.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">
-                          {user.email}
-                          {user.id === sessionUser.userId ? (
-                            <Badge variant="outline" className="ml-2">
-                              You
+                    data.users.map((user) => {
+                      const editHref = buildStaffPageHref({
+                        dialog: "edit",
+                        item: user.id,
+                      });
+                      const deleteHref = buildStaffPageHref({
+                        dialog: "delete",
+                        item: user.id,
+                      });
+
+                      return (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">
+                            {user.email}
+                            {user.id === sessionUser.userId ? (
+                              <Badge variant="outline" className="ml-2">
+                                You
+                              </Badge>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                user.role === "OWNER"
+                                  ? "default"
+                                  : user.role === "MANAGER"
+                                    ? "outline"
+                                    : "secondary"
+                              }
+                            >
+                              {user.role}
                             </Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              user.role === "OWNER"
-                                ? "default"
-                                : user.role === "MANAGER"
-                                  ? "outline"
-                                  : "secondary"
-                            }
-                          >
-                            {user.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="hidden text-muted-foreground md:table-cell">
-                          {createdAtFormat.format(user.createdAt)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <form action={updateStaffRoleAction} className="inline-flex gap-2">
-                            <input type="hidden" name="userId" value={user.id} />
-                            <Button
-                              type="submit"
-                              name="role"
-                              value="OWNER"
-                              size="sm"
-                              variant={user.role === "OWNER" ? "default" : "outline"}
-                              disabled={user.role === "OWNER"}
-                            >
-                              Set Owner
-                            </Button>
-                            <Button
-                              type="submit"
-                              name="role"
-                              value="MANAGER"
-                              size="sm"
-                              variant={user.role === "MANAGER" ? "secondary" : "outline"}
-                              disabled={user.role === "MANAGER"}
-                            >
-                              Set Manager
-                            </Button>
-                            <Button
-                              type="submit"
-                              name="role"
-                              value="SALES"
-                              size="sm"
-                              variant={user.role === "SALES" ? "secondary" : "outline"}
-                              disabled={user.role === "SALES"}
-                            >
-                              Set Sales
-                            </Button>
-                          </form>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground md:table-cell">
+                            {createdAtFormat.format(user.createdAt)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex flex-wrap justify-end gap-2">
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={editHref}>Edit</Link>
+                              </Button>
+                              {user.id === sessionUser.userId ? (
+                                <Button size="sm" variant="destructive" disabled>
+                                  Delete
+                                </Button>
+                              ) : (
+                                <Button asChild size="sm" variant="destructive">
+                                  <Link href={deleteHref}>Delete</Link>
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -393,47 +541,219 @@ export default async function OwnerStaffPage({ searchParams }: StaffPageProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
           <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
-            <div className="flex items-start justify-between gap-3 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">Create Staff Account</h2>
-                <p className="text-sm text-muted-foreground">
-                  Add a new login and assign owner, manager, or sales role.
-                </p>
-              </div>
-              <Button asChild variant="ghost" size="sm">
-                <Link href={closeDialogHref}>Close</Link>
-              </Button>
-            </div>
-            <div className="border-t" />
-            <form action={createStaffAction} className="grid grid-cols-1 gap-3 p-5">
-              <Input
-                name="email"
-                type="email"
-                placeholder="staff@smartpos.local"
-                required
-              />
-              <Input
-                name="password"
-                type="password"
-                minLength={8}
-                placeholder="Minimum 8 characters"
-                required
-              />
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button asChild type="button" variant="outline">
-                  <Link href={closeDialogHref}>Cancel</Link>
-                </Button>
-                <Button type="submit" name="role" value="SALES">
-                  Create Sales
-                </Button>
-                <Button type="submit" name="role" value="MANAGER" variant="outline">
-                  Create Manager
-                </Button>
-                <Button type="submit" name="role" value="OWNER" variant="secondary">
-                  Create Owner
-                </Button>
-              </div>
-            </form>
+            {dialogMode === "new" ? (
+              <>
+                <div className="flex items-start justify-between gap-3 px-5 py-4">
+                  <div>
+                    <h2 className="text-lg font-semibold">Create Staff Account</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Add a new login and assign owner, manager, or sales role.
+                    </p>
+                  </div>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={closeDialogHref}>Close</Link>
+                  </Button>
+                </div>
+                <div className="border-t" />
+                <form action={createStaffAction} className="grid grid-cols-1 gap-4 p-5">
+                  <FieldGroup className="gap-4">
+                    <Field className="gap-2">
+                      <FieldLabel htmlFor="dialog-new-email">Email</FieldLabel>
+                      <Input
+                        id="dialog-new-email"
+                        name="email"
+                        type="email"
+                        placeholder="staff@smartpos.local"
+                        required
+                      />
+                    </Field>
+                    <Field className="gap-2">
+                      <FieldLabel htmlFor="dialog-new-password">Password</FieldLabel>
+                      <Input
+                        id="dialog-new-password"
+                        name="password"
+                        type="password"
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="Minimum 8 characters"
+                        required
+                      />
+                    </Field>
+                    <Field className="gap-2">
+                      <FieldLabel htmlFor="dialog-new-role">Role</FieldLabel>
+                      <select
+                        id="dialog-new-role"
+                        name="role"
+                        defaultValue="SALES"
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="OWNER">Owner</option>
+                        <option value="MANAGER">Manager</option>
+                        <option value="SALES">Sales</option>
+                      </select>
+                    </Field>
+                  </FieldGroup>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button asChild type="button" variant="outline">
+                      <Link href={closeDialogHref}>Cancel</Link>
+                    </Button>
+                    <Button type="submit">Create Account</Button>
+                  </div>
+                </form>
+              </>
+            ) : null}
+
+            {dialogMode === "edit" ? (
+              dialogItem ? (
+                <>
+                  <div className="flex items-start justify-between gap-3 px-5 py-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Edit Staff Account</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Update email, role, and optionally set a new password.
+                      </p>
+                    </div>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={closeDialogHref}>Close</Link>
+                    </Button>
+                  </div>
+                  <div className="border-t" />
+                  <form action={updateStaffAction} className="grid grid-cols-1 gap-4 p-5">
+                    <input type="hidden" name="userId" value={dialogItem.id} />
+                    <FieldGroup className="gap-4">
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="dialog-edit-email">Email</FieldLabel>
+                        <Input
+                          id="dialog-edit-email"
+                          name="email"
+                          type="email"
+                          defaultValue={dialogItem.email}
+                          required
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="dialog-edit-role">Role</FieldLabel>
+                        <select
+                          id="dialog-edit-role"
+                          name="role"
+                          defaultValue={dialogItem.role}
+                          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                          <option value="OWNER">Owner</option>
+                          <option value="MANAGER">Manager</option>
+                          <option value="SALES">Sales</option>
+                        </select>
+                        {dialogItem.id === sessionUser.userId ? (
+                          <p className="text-xs text-muted-foreground">
+                            Role change is blocked for your currently signed-in account.
+                          </p>
+                        ) : null}
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="dialog-edit-password">
+                          New Password (Optional)
+                        </FieldLabel>
+                        <Input
+                          id="dialog-edit-password"
+                          name="password"
+                          type="password"
+                          minLength={8}
+                          autoComplete="new-password"
+                          placeholder="Leave blank to keep current password"
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel>Created</FieldLabel>
+                        <Input value={createdAtFormat.format(dialogItem.createdAt)} disabled />
+                      </Field>
+                    </FieldGroup>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button asChild type="button" variant="outline">
+                        <Link href={closeDialogHref}>Cancel</Link>
+                      </Button>
+                      <Button type="submit">Save Changes</Button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div className="px-5 py-4">
+                    <h2 className="text-lg font-semibold">Edit Staff Account</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Selected account not found.
+                    </p>
+                  </div>
+                  <div className="border-t" />
+                  <div className="flex justify-end p-5">
+                    <Button asChild variant="outline">
+                      <Link href={closeDialogHref}>Close</Link>
+                    </Button>
+                  </div>
+                </>
+              )
+            ) : null}
+
+            {dialogMode === "delete" ? (
+              dialogItem ? (
+                <>
+                  <div className="flex items-start justify-between gap-3 px-5 py-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Delete Staff Account</h2>
+                      <p className="text-sm text-muted-foreground">
+                        This action permanently removes this account.
+                      </p>
+                    </div>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={closeDialogHref}>Close</Link>
+                    </Button>
+                  </div>
+                  <div className="border-t" />
+                  {dialogItem.id === sessionUser.userId ? (
+                    <div className="grid grid-cols-1 gap-4 p-5">
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm">
+                        You cannot delete your own currently signed-in owner account.
+                      </div>
+                      <div className="flex justify-end">
+                        <Button asChild variant="outline">
+                          <Link href={closeDialogHref}>Close</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form action={deleteStaffAction} className="grid grid-cols-1 gap-4 p-5">
+                      <input type="hidden" name="userId" value={dialogItem.id} />
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm">
+                        <p className="font-medium">{dialogItem.email}</p>
+                        <p className="text-muted-foreground">Role: {dialogItem.role}</p>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button asChild type="button" variant="outline">
+                          <Link href={closeDialogHref}>Cancel</Link>
+                        </Button>
+                        <Button type="submit" variant="destructive">
+                          Confirm Delete
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="px-5 py-4">
+                    <h2 className="text-lg font-semibold">Delete Staff Account</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Selected account not found.
+                    </p>
+                  </div>
+                  <div className="border-t" />
+                  <div className="flex justify-end p-5">
+                    <Button asChild variant="outline">
+                      <Link href={closeDialogHref}>Close</Link>
+                    </Button>
+                  </div>
+                </>
+              )
+            ) : null}
           </div>
         </div>
       ) : null}
