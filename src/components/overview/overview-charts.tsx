@@ -60,13 +60,6 @@ const paymentChartConfig = {
   },
 } satisfies ChartConfig;
 
-const productsChartConfig = {
-  quantity: {
-    label: "Qty Sold",
-    color: "var(--chart-3)",
-  },
-} satisfies ChartConfig;
-
 type OverviewChartsProps = {
   currencyCode: StoreCurrencyCode;
   dailyTrend: Array<{
@@ -89,11 +82,6 @@ type OverviewChartsProps = {
     href: string;
     label: string;
   }>;
-  topProducts: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-  }>;
 };
 
 function formatCompactPrice(cents: number, currencyCode: StoreCurrencyCode) {
@@ -102,21 +90,12 @@ function formatCompactPrice(cents: number, currencyCode: StoreCurrencyCode) {
   });
 }
 
-function shortenName(value: string) {
-  if (value.length <= 26) {
-    return value;
-  }
-
-  return `${value.slice(0, 26)}...`;
-}
-
 export function OverviewCharts({
   currencyCode,
   dailyTrend,
   paymentMix,
   trendRangeLabel,
   trendRanges,
-  topProducts,
 }: OverviewChartsProps) {
   const totalRecentRevenueCents = dailyTrend.reduce(
     (sum, item) => sum + item.revenueCents,
@@ -124,8 +103,6 @@ export function OverviewCharts({
   );
   const totalRecentSales = dailyTrend.reduce((sum, item) => sum + item.salesCount, 0);
   const hasPaymentData = paymentMix.some((item) => item.count > 0);
-  const hasTopProductData = topProducts.length > 0;
-
   const paymentData = paymentMix.map((item) => ({
     key:
       item.method === "CASH"
@@ -318,55 +295,6 @@ export function OverviewCharts({
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Top Products by Quantity</CardTitle>
-          <CardDescription>Best-selling items in the last {trendRangeLabel}.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {hasTopProductData ? (
-            <ChartContainer
-              config={productsChartConfig}
-              className="h-[300px] w-full aspect-auto"
-            >
-              <BarChart
-                data={topProducts}
-                layout="vertical"
-                margin={{ left: 28, right: 12, top: 8, bottom: 8 }}
-              >
-                <CartesianGrid horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  width={200}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  tickFormatter={(value) => shortenName(String(value))}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) =>
-                        String(payload?.[0]?.payload?.name ?? "")
-                      }
-                      formatter={(value) => `${value} pcs`}
-                    />
-                  }
-                />
-                <Bar dataKey="quantity" fill="var(--color-quantity)" radius={6} />
-              </BarChart>
-            </ChartContainer>
-          ) : (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              No product-level sales data in the last 14 days.
-            </p>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

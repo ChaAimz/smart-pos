@@ -64,11 +64,6 @@ type DashboardData = {
   recentSalesCount: number;
   todayRevenueCents: number;
   todaySalesCount: number;
-  topProducts: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-  }>;
 };
 
 type OwnerOverviewPageProps = {
@@ -139,7 +134,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
       monthRevenue,
       inventoryValuationRows,
       recentSales,
-      recentSaleItems,
     ] = await prisma.$transaction([
       prisma.sale.aggregate({
         where: {
@@ -173,24 +167,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
           createdAt: true,
           paymentMethod: true,
           totalCents: true,
-        },
-      }),
-      prisma.saleItem.findMany({
-        where: {
-          sale: {
-            createdAt: {
-              gte: rangeStart,
-            },
-          },
-        },
-        select: {
-          quantity: true,
-          product: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
         },
       }),
     ]);
@@ -262,19 +238,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
       }
     }
 
-    const topProductMap = new Map<string, { name: string; quantity: number }>();
-    for (const item of recentSaleItems) {
-      const existing = topProductMap.get(item.product.id);
-      if (existing) {
-        existing.quantity += item.quantity;
-      } else {
-        topProductMap.set(item.product.id, {
-          name: item.product.name,
-          quantity: item.quantity,
-        });
-      }
-    }
-
     const dailyTrend = dailyBuckets.map((bucket) => {
       const entry = dailyMap.get(bucket.dateKey);
       return {
@@ -296,11 +259,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
         revenueCents: entry?.revenueCents ?? 0,
       };
     });
-
-    const topProducts = Array.from(topProductMap.entries())
-      .map(([id, value]) => ({ id, ...value }))
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 6);
 
     const recentRevenueCents = dailyTrend.reduce(
       (sum, item) => sum + item.revenueCents,
@@ -326,7 +284,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
       recentSalesCount,
       todayRevenueCents,
       todaySalesCount,
-      topProducts,
     };
   } catch {
     return {
@@ -356,7 +313,6 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
       recentSalesCount: 0,
       todayRevenueCents: 0,
       todaySalesCount: 0,
-      topProducts: [],
     };
   }
 }
@@ -619,7 +575,6 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
             href: buildOverviewRangeHref(rangeValue),
             label: rangeValue === 365 ? "1Y" : `${rangeValue}D`,
           }))}
-          topProducts={data.topProducts}
         />
       </section>
     </OwnerShell>

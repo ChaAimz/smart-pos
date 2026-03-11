@@ -1,8 +1,23 @@
 "use client";
 
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import {
+  type ColumnDef,
+  type ColumnSizingState,
+  type VisibilityState,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, ArrowUpDown, MoreHorizontal, PackagePlus, Search } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  MoreHorizontal,
+  PackagePlus,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -10,8 +25,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -29,6 +47,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +84,69 @@ type ProductsApiPayload = {
   matchingProductsCount: number;
   rows: ProductsVirtualTableRow[];
 };
+
+const PRODUCTS_TABLE_PREFERENCES_STORAGE_KEY = "owner-products-table-preferences-v1";
+const DEFAULT_COLUMN_SIZING: ColumnSizingState = {
+  actions: 72,
+  costCents: 108,
+  isSellable: 132,
+  marginCents: 120,
+  name: 248,
+  priceCents: 108,
+  priceMix: 220,
+  primaryBarcode: 180,
+  stockQty: 90,
+  updatedAtLabel: 196,
+};
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {};
+const COLUMN_LABELS: Record<string, string> = {
+  costCents: "Cost",
+  isSellable: "Status",
+  marginCents: "Margin",
+  name: "Name",
+  priceCents: "Price",
+  priceMix: "Price Mix",
+  primaryBarcode: "Barcode",
+  stockQty: "Stock",
+  updatedAtLabel: "Updated",
+};
+
+function loadProductsTablePreferences() {
+  if (typeof window === "undefined") {
+    return {
+      columnSizing: DEFAULT_COLUMN_SIZING,
+      columnVisibility: DEFAULT_COLUMN_VISIBILITY,
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PRODUCTS_TABLE_PREFERENCES_STORAGE_KEY);
+    if (!raw) {
+      return {
+        columnSizing: DEFAULT_COLUMN_SIZING,
+        columnVisibility: DEFAULT_COLUMN_VISIBILITY,
+      };
+    }
+
+    const parsed = JSON.parse(raw) as {
+      columnSizing?: ColumnSizingState;
+      columnVisibility?: VisibilityState;
+    };
+
+    return {
+      columnSizing: {
+        ...DEFAULT_COLUMN_SIZING,
+        ...(parsed.columnSizing ?? {}),
+      },
+      columnVisibility: parsed.columnVisibility ?? DEFAULT_COLUMN_VISIBILITY,
+    };
+  } catch {
+    return {
+      columnSizing: DEFAULT_COLUMN_SIZING,
+      columnVisibility: DEFAULT_COLUMN_VISIBILITY,
+    };
+  }
+}
 
 function buildProductsPageHref(input: {
   dialog?: ProductDialogMode | null;
@@ -97,6 +184,28 @@ function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
   return formatCurrencyFromCents(cents, currencyCode);
 }
 
+const percentFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
+
+function clampPercent(value: number) {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function formatPercent(value: number) {
+  return `${percentFormat.format(value)}%`;
+}
+
+function formatSignedPercent(value: number) {
+  if (value > 0) {
+    return `+${formatPercent(value)}`;
+  }
+  if (value < 0) {
+    return `-${formatPercent(Math.abs(value))}`;
+  }
+  return "0%";
+}
+
 function formatMargin(cents: number, currencyCode: StoreCurrencyCode) {
   if (cents > 0) {
     return `+${formatPrice(cents, currencyCode)}`;
@@ -115,25 +224,13 @@ function columnClassName(columnId: string) {
     return "min-w-40";
   }
   if (columnId === "stockQty") {
-    return "w-20 text-right";
-  }
-  if (columnId === "costCents") {
-    return "w-24";
-  }
-  if (columnId === "priceCents") {
-    return "w-24";
-  }
-  if (columnId === "marginCents") {
-    return "w-24";
-  }
-  if (columnId === "isSellable") {
-    return "w-28";
+    return "text-right";
   }
   if (columnId === "updatedAtLabel") {
     return "min-w-44";
   }
   if (columnId === "actions") {
-    return "w-16 text-right";
+    return "text-right";
   }
   return "";
 }
@@ -175,11 +272,37 @@ export function ProductsVirtualTable({
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
   const [sortKey, setSortKey] = useState<OwnerProductSortKey>(initialSortKey);
   const [sortOrder, setSortOrder] = useState<OwnerProductSortOrder>(initialSortOrder);
+  const [columnVisibility, setColumnVisibility] =
+    useState<VisibilityState>(DEFAULT_COLUMN_VISIBILITY);
+  const [columnSizing, setColumnSizing] =
+    useState<ColumnSizingState>(DEFAULT_COLUMN_SIZING);
+  const [arePreferencesReady, setArePreferencesReady] = useState(false);
 
   const scrollElementRef = useRef<HTMLDivElement>(null);
   const requestedOffsetRef = useRef<string | null>(null);
   const queryTokenRef = useRef(0);
   const isFirstDynamicQueryRef = useRef(true);
+
+  useEffect(() => {
+    const preferences = loadProductsTablePreferences();
+    setColumnVisibility(preferences.columnVisibility);
+    setColumnSizing(preferences.columnSizing);
+    setArePreferencesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!arePreferencesReady) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      PRODUCTS_TABLE_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        columnSizing,
+        columnVisibility,
+      })
+    );
+  }, [arePreferencesReady, columnSizing, columnVisibility]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -390,6 +513,8 @@ export function ProductsVirtualTable({
       {
         accessorKey: "name",
         header: () => renderSortableHeader("Name", "name"),
+        minSize: 180,
+        size: 248,
         cell: ({ row }) => (
           <span className="block max-w-80 truncate font-medium">{row.original.name}</span>
         ),
@@ -397,6 +522,8 @@ export function ProductsVirtualTable({
       {
         accessorKey: "primaryBarcode",
         header: "Barcode",
+        minSize: 140,
+        size: 180,
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">
             {row.original.primaryBarcode ?? "No barcode"}
@@ -406,21 +533,29 @@ export function ProductsVirtualTable({
       {
         accessorKey: "stockQty",
         header: () => renderSortableHeader("Stock", "stockQty"),
+        minSize: 72,
+        size: 90,
         cell: ({ row }) => row.original.stockQty,
       },
       {
         accessorKey: "costCents",
         header: () => renderSortableHeader("Cost", "costCents"),
+        minSize: 96,
+        size: 108,
         cell: ({ row }) => formatPrice(row.original.costCents, currencyCode),
       },
       {
         accessorKey: "priceCents",
         header: () => renderSortableHeader("Price", "priceCents"),
+        minSize: 96,
+        size: 108,
         cell: ({ row }) => formatPrice(row.original.priceCents, currencyCode),
       },
       {
         id: "marginCents",
         header: () => renderSortableHeader("Margin", "marginCents"),
+        minSize: 104,
+        size: 120,
         cell: ({ row }) => {
           const marginCents = row.original.priceCents - row.original.costCents;
           return (
@@ -436,8 +571,66 @@ export function ProductsVirtualTable({
         },
       },
       {
+        id: "priceMix",
+        header: "Price Mix",
+        minSize: 190,
+        size: 220,
+        cell: ({ row }) => {
+          const { costCents, priceCents } = row.original;
+          const marginCents = priceCents - costCents;
+          const costPercentOfPrice = priceCents > 0 ? (costCents / priceCents) * 100 : 0;
+          const marginPercentOfPrice = priceCents > 0 ? (marginCents / priceCents) * 100 : 0;
+          const boundedCostPercent = clampPercent(costPercentOfPrice);
+          const gainPercent = marginCents > 0 ? 100 - boundedCostPercent : 0;
+          const overCostPercent = marginCents < 0 ? clampPercent(costPercentOfPrice - 100) : 0;
+
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="min-w-44">
+                  <div className="relative h-2 overflow-hidden rounded-full bg-muted/70">
+                    <div
+                      className="h-full bg-slate-400/90"
+                      style={{ width: `${boundedCostPercent}%` }}
+                    />
+                    {gainPercent > 0 ? (
+                      <div
+                        className="absolute inset-y-0 right-0 bg-emerald-500/90"
+                        style={{ width: `${gainPercent}%` }}
+                      />
+                    ) : null}
+                    {overCostPercent > 0 ? (
+                      <div
+                        className="absolute inset-y-0 right-0 bg-destructive/80"
+                        style={{ width: `${overCostPercent}%` }}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-[11px] leading-none">
+                    <span className="text-muted-foreground">Cost {formatPercent(costPercentOfPrice)}</span>
+                    <span
+                      className={cn(
+                        marginCents > 0 && "text-emerald-600",
+                        marginCents < 0 && "text-destructive"
+                      )}
+                    >
+                      {formatSignedPercent(marginPercentOfPrice)}
+                    </span>
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>
+                Cost {formatPrice(costCents, currencyCode)} of {formatPrice(priceCents, currencyCode)}
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
+      },
+      {
         accessorKey: "isSellable",
         header: () => renderSortableHeader("Status", "isSellable"),
+        minSize: 116,
+        size: 132,
         cell: ({ row }) => (
           <Badge
             variant={row.original.isSellable ? "secondary" : "outline"}
@@ -450,10 +643,15 @@ export function ProductsVirtualTable({
       {
         accessorKey: "updatedAtLabel",
         header: () => renderSortableHeader("Updated", "updatedAt"),
+        minSize: 168,
+        size: 196,
       },
       {
         id: "actions",
         header: "Actions",
+        enableHiding: false,
+        enableResizing: false,
+        size: 72,
         cell: ({ row }) => (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -504,14 +702,24 @@ export function ProductsVirtualTable({
   const table = useReactTable({
     data: rows,
     columns,
+    state: {
+      columnSizing,
+      columnVisibility,
+    },
+    onColumnSizingChange: setColumnSizing,
+    onColumnVisibilityChange: setColumnVisibility,
+    columnResizeMode: "onChange",
+    enableColumnResizing: true,
     getCoreRowModel: getCoreRowModel(),
   });
 
   const tableRows = table.getRowModel().rows;
+  const visibleColumnCount = table.getVisibleLeafColumns().length;
+  const hideableColumns = table.getAllLeafColumns().filter((column) => column.getCanHide());
 
   const rowVirtualizer = useVirtualizer({
     count: tableRows.length,
-    estimateSize: () => 49,
+    estimateSize: () => 58,
     getScrollElement: () => scrollElementRef.current,
     overscan: 8,
   });
@@ -552,8 +760,9 @@ export function ProductsVirtualTable({
   ]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="mb-4 shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <TooltipProvider delayDuration={120}>
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <div className="mb-4 shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full max-w-sm">
           <Search
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -568,26 +777,52 @@ export function ProductsVirtualTable({
             className="pl-9"
           />
         </div>
-        <Button asChild>
-          <Link
-            href={buildProductsPageHref({
-              order: sortOrder,
-              q: activeQuery,
-              dialog: "new",
-              sort: sortKey,
-            })}
-          >
-            <PackagePlus className="size-4" aria-hidden="true" />
-            New Item
-          </Link>
-        </Button>
-      </div>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline">
+                  <SlidersHorizontal className="size-4" aria-hidden="true" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Visible Columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {hideableColumns.map((column) => (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    checked={column.getIsVisible()}
+                    onCheckedChange={(checked) => {
+                      column.toggleVisibility(Boolean(checked));
+                    }}
+                  >
+                    {COLUMN_LABELS[column.id] ?? column.id}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button asChild>
+              <Link
+                href={buildProductsPageHref({
+                  order: sortOrder,
+                  q: activeQuery,
+                  dialog: "new",
+                  sort: sortKey,
+                })}
+              >
+                <PackagePlus className="size-4" aria-hidden="true" />
+                New Item
+              </Link>
+            </Button>
+          </div>
+        </div>
 
       <div
         ref={scrollElementRef}
         className="min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-md border"
       >
-        <Table className="min-w-[1140px]">
+        <Table className="min-w-full" style={{ minWidth: `${table.getTotalSize()}px` }}>
           <TableCaption>
             Showing {rows.length} of {listCount} products.
             {isRefreshing ? " Updating..." : ""}
@@ -598,8 +833,9 @@ export function ProductsVirtualTable({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
+                    style={{ width: `${header.getSize()}px` }}
                     className={cn(
-                      "sticky top-0 z-10 bg-muted/40",
+                      "sticky top-0 z-10 bg-muted/40 relative",
                       columnClassName(header.column.id)
                     )}
                   >
@@ -609,6 +845,21 @@ export function ProductsVirtualTable({
                           header.column.columnDef.header,
                           header.getContext()
                         )}
+                    {header.column.getCanResize() ? (
+                      <button
+                        type="button"
+                        aria-label={`Resize ${COLUMN_LABELS[header.column.id] ?? header.column.id} column`}
+                        onDoubleClick={() => {
+                          header.column.resetSize();
+                        }}
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        className={cn(
+                          "absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none",
+                          header.column.getIsResizing() ? "bg-primary/60" : "hover:bg-muted-foreground/40"
+                        )}
+                      />
+                    ) : null}
                   </TableHead>
                 ))}
               </TableRow>
@@ -617,7 +868,7 @@ export function ProductsVirtualTable({
           <TableBody>
             {tableRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={visibleColumnCount} className="py-6 text-center text-muted-foreground">
                   {isRefreshing ? "Searching products..." : "No products found."}
                 </TableCell>
               </TableRow>
@@ -625,7 +876,7 @@ export function ProductsVirtualTable({
               <>
                 {paddingTop > 0 ? (
                   <TableRow aria-hidden="true">
-                    <TableCell colSpan={columns.length} style={{ height: `${paddingTop}px` }} className="p-0" />
+                    <TableCell colSpan={visibleColumnCount} style={{ height: `${paddingTop}px` }} className="p-0" />
                   </TableRow>
                 ) : null}
 
@@ -640,6 +891,7 @@ export function ProductsVirtualTable({
                       {row.getVisibleCells().map((cell) => (
                         <TableCell
                           key={cell.id}
+                          style={{ width: `${cell.column.getSize()}px` }}
                           className={columnClassName(cell.column.id)}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -651,13 +903,13 @@ export function ProductsVirtualTable({
 
                 {paddingBottom > 0 ? (
                   <TableRow aria-hidden="true">
-                    <TableCell colSpan={columns.length} style={{ height: `${paddingBottom}px` }} className="p-0" />
+                    <TableCell colSpan={visibleColumnCount} style={{ height: `${paddingBottom}px` }} className="p-0" />
                   </TableRow>
                 ) : null}
 
                 {isLoadingMore ? (
                   <TableRow>
-                    <TableCell colSpan={columns.length} className="py-3 text-center text-xs text-muted-foreground">
+                    <TableCell colSpan={visibleColumnCount} className="py-3 text-center text-xs text-muted-foreground">
                       Loading more products...
                     </TableCell>
                   </TableRow>
@@ -665,7 +917,7 @@ export function ProductsVirtualTable({
 
                 {loadError ? (
                   <TableRow>
-                    <TableCell colSpan={columns.length} className="py-3 text-center text-xs">
+                    <TableCell colSpan={visibleColumnCount} className="py-3 text-center text-xs">
                       <div className="flex items-center justify-center gap-2">
                         <span className="text-destructive">{loadError}</span>
                         <Button
@@ -687,6 +939,7 @@ export function ProductsVirtualTable({
           </TableBody>
         </Table>
       </div>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

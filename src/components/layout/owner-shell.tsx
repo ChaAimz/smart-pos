@@ -31,6 +31,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ContentShell } from "@/components/layout/content-shell";
 import { AppBrand } from "@/components/layout/app-brand";
@@ -83,12 +89,11 @@ function SidebarMenuItem({
   soon?: boolean;
 }) {
   if (!href) {
-    return (
+    const disabledItem = (
       <Button
         type="button"
         variant="ghost"
         disabled
-        title={collapsed ? label : undefined}
         className={cn(
           "h-9 w-full text-muted-foreground disabled:opacity-100",
           collapsed ? "justify-center px-0" : "justify-start",
@@ -99,14 +104,28 @@ function SidebarMenuItem({
         {soon && !collapsed ? <Badge variant="outline" className="ml-auto">Soon</Badge> : null}
       </Button>
     );
+
+    if (!collapsed) {
+      return disabledItem;
+    }
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex w-full">{disabledItem}</span>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    );
   }
 
-  return (
+  const navButton = (
     <Button
       asChild
       type="button"
       variant={active ? "secondary" : "ghost"}
-      title={collapsed ? label : undefined}
       className={cn("h-9 w-full", collapsed ? "justify-center px-0" : "justify-start")}
     >
       <Link href={href}>
@@ -114,6 +133,19 @@ function SidebarMenuItem({
         <span className={collapsed ? "sr-only" : undefined}>{label}</span>
       </Link>
     </Button>
+  );
+
+  if (!collapsed) {
+    return navButton;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{navButton}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -181,6 +213,11 @@ export function OwnerShell({
     window.localStorage.setItem(OWNER_SIDEBAR_COLLAPSED_KEY, String(next));
     window.dispatchEvent(new Event(OWNER_SIDEBAR_COLLAPSED_EVENT));
   };
+  const sidebarToggleTooltip = isIpadAutoCollapse
+    ? "Sidebar auto-collapsed on iPad"
+    : sidebarCollapsed
+      ? "Expand sidebar"
+      : "Collapse sidebar";
 
   return (
     <div className="min-h-screen bg-muted/40">
@@ -192,93 +229,91 @@ export function OwnerShell({
         )}
       >
         <aside className="hidden border-r bg-background md:sticky md:top-0 md:flex md:h-screen md:flex-col">
-          <div
-            className={cn(
-              "flex h-14 shrink-0 items-center border-b",
-              sidebarCollapsed ? "justify-center px-2" : "px-4",
-            )}
-          >
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              disabled={isIpadAutoCollapse}
+          <TooltipProvider delayDuration={120}>
+            <div
               className={cn(
-                "inline-flex w-full rounded-md transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                "disabled:cursor-default disabled:hover:bg-transparent disabled:opacity-100",
-                sidebarCollapsed ? "justify-center px-1 py-1" : "justify-start px-2 py-1"
+                "flex h-14 shrink-0 items-center border-b",
+                sidebarCollapsed ? "justify-center px-2" : "px-4",
               )}
-              aria-label={
-                isIpadAutoCollapse
-                  ? "Sidebar auto-collapsed on iPad"
-                  : sidebarCollapsed
-                    ? "Expand sidebar"
-                    : "Collapse sidebar"
-              }
-              title={
-                isIpadAutoCollapse
-                  ? "Sidebar auto-collapsed on iPad"
-                  : sidebarCollapsed
-                    ? "Expand sidebar"
-                    : "Collapse sidebar"
-              }
             >
-              <AppBrand hideLabel={sidebarCollapsed} />
-            </button>
-          </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex w-full">
+                    <button
+                      type="button"
+                      onClick={toggleSidebar}
+                      disabled={isIpadAutoCollapse}
+                      className={cn(
+                        "inline-flex w-full rounded-md transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "disabled:cursor-default disabled:hover:bg-transparent disabled:opacity-100",
+                        sidebarCollapsed ? "justify-center px-1 py-1" : "justify-start px-2 py-1"
+                      )}
+                      aria-label={sidebarToggleTooltip}
+                    >
+                      <AppBrand hideLabel={sidebarCollapsed} />
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10}>
+                  {sidebarToggleTooltip}
+                </TooltipContent>
+              </Tooltip>
+            </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <nav className="flex flex-col gap-1">
-              <SidebarMenuItem
-                active={activeNav === "overview"}
-                collapsed={sidebarCollapsed}
-                href="/owner"
-                icon={LayoutDashboard}
-                label="Overview"
-              />
-              <SidebarMenuItem
-                active={activeNav === "products"}
-                collapsed={sidebarCollapsed}
-                href="/owner/products"
-                icon={Package}
-                label="Products"
-              />
-              <SidebarMenuItem
-                active={activeNav === "reports"}
-                collapsed={sidebarCollapsed}
-                href="/owner/reports"
-                icon={BarChart3}
-                label="Reports"
-              />
-              <SidebarMenuItem
-                active={activeNav === "analysis"}
-                collapsed={sidebarCollapsed}
-                href="/owner/analysis"
-                icon={LineChart}
-                label="Analysis"
-              />
-              <SidebarMenuItem
-                active={activeNav === "activity"}
-                collapsed={sidebarCollapsed}
-                href="/owner/activity"
-                icon={Activity}
-                label="Activity Log"
-              />
-              <SidebarMenuItem
-                active={activeNav === "staff"}
-                collapsed={sidebarCollapsed}
-                href="/owner/staff"
-                icon={Users}
-                label="Staff"
-              />
-              <SidebarMenuItem
-                active={activeNav === "settings"}
-                collapsed={sidebarCollapsed}
-                href="/owner/settings"
-                icon={Settings}
-                label="Settings"
-              />
-            </nav>
-          </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <nav className="flex flex-col gap-1">
+                <SidebarMenuItem
+                  active={activeNav === "overview"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner"
+                  icon={LayoutDashboard}
+                  label="Overview"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "products"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/products"
+                  icon={Package}
+                  label="Products"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "reports"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/reports"
+                  icon={BarChart3}
+                  label="Reports"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "analysis"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/analysis"
+                  icon={LineChart}
+                  label="Analysis"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "activity"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/activity"
+                  icon={Activity}
+                  label="Activity Log"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "staff"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/staff"
+                  icon={Users}
+                  label="Staff"
+                />
+                <SidebarMenuItem
+                  active={activeNav === "settings"}
+                  collapsed={sidebarCollapsed}
+                  href="/owner/settings"
+                  icon={Settings}
+                  label="Settings"
+                />
+              </nav>
+            </div>
+          </TooltipProvider>
 
         </aside>
 
