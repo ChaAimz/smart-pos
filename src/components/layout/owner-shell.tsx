@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart3,
   LayoutDashboard,
+  LineChart,
   Package,
   Settings,
   UserRound,
@@ -36,7 +37,14 @@ import { AppBrand } from "@/components/layout/app-brand";
 import { LogoutMenuItem } from "@/components/layout/logout-menu-item";
 
 type OwnerShellProps = {
-  activeNav: "overview" | "products" | "reports" | "activity" | "staff" | "settings";
+  activeNav:
+    | "overview"
+    | "products"
+    | "reports"
+    | "analysis"
+    | "activity"
+    | "staff"
+    | "settings";
   children: React.ReactNode;
   mainClassName?: string;
   pageTitle: string;
@@ -242,6 +250,13 @@ export function OwnerShell({
                 label="Reports"
               />
               <SidebarMenuItem
+                active={activeNav === "analysis"}
+                collapsed={sidebarCollapsed}
+                href="/owner/analysis"
+                icon={LineChart}
+                label="Analysis"
+              />
+              <SidebarMenuItem
                 active={activeNav === "activity"}
                 collapsed={sidebarCollapsed}
                 href="/owner/activity"
@@ -336,6 +351,12 @@ export function OwnerShell({
                       <Link href="/owner/reports">
                         <BarChart3 aria-hidden="true" />
                         Reports
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className={avatarMenuItemClass}>
+                      <Link href="/owner/analysis">
+                        <LineChart aria-hidden="true" />
+                        Analysis
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild className={avatarMenuItemClass}>

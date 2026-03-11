@@ -1,7 +1,7 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
+import { fetchOwnerProductPage } from "@/lib/owner-product-list";
+import { normalizeOwnerProductSort } from "@/lib/owner-product-sorting";
 import { getSessionUser } from "@/lib/session";
 
 const PRODUCTS_PAGE_SIZE = 60;
@@ -9,28 +9,6 @@ const updatedAtFormat = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
-
-function buildProductWhere(query: string): Prisma.ProductWhereInput | undefined {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery) {
-    return undefined;
-  }
-
-  return {
-    OR: [
-      { name: { contains: normalizedQuery, mode: "insensitive" } },
-      { sku: { contains: normalizedQuery, mode: "insensitive" } },
-      {
-        barcodes: {
-          some: {
-            isPrimary: true,
-            code: { contains: normalizedQuery, mode: "insensitive" },
-          },
-        },
-      },
-    ],
-  };
-}
 
 function parseOffset(input: string | null) {
   const value = Number.parseInt(String(input ?? "0"), 10);
@@ -52,6 +30,10 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const query = String(requestUrl.searchParams.get("q") ?? "");
   const offset = parseOffset(requestUrl.searchParams.get("offset"));
+  const { sortKey, sortOrder } = normalizeOwnerProductSort({
+    order: requestUrl.searchParams.get("order"),
+    sort: requestUrl.searchParams.get("sort"),
+  });
 
   if (offset == null) {
     return NextResponse.json(
@@ -61,45 +43,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const productWhere = buildProductWhere(query);
+    const pageData = await fetchOwnerProductPage({
+      offset,
+      pageSize: PRODUCTS_PAGE_SIZE,
+      query,
+      sortKey,
+      sortOrder,
+    });
 
-    const [rawProducts, matchingProductsCount] = await prisma.$transaction([
-      prisma.product.findMany({
-        where: productWhere,
-        orderBy: { updatedAt: "desc" },
-        skip: offset,
-        take: PRODUCTS_PAGE_SIZE + 1,
-        select: {
-          barcodes: {
-            where: { isPrimary: true },
-            orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
-            select: {
-              code: true,
-            },
-            take: 1,
-          },
-          id: true,
-          isSellable: true,
-          name: true,
-          costCents: true,
-          priceCents: true,
-          stockQty: true,
-          updatedAt: true,
-        },
-      }),
-      prisma.product.count({ where: productWhere }),
-    ]);
-
-    const hasMore = rawProducts.length > PRODUCTS_PAGE_SIZE;
-    const pageProducts = hasMore
-      ? rawProducts.slice(0, PRODUCTS_PAGE_SIZE)
-      : rawProducts;
-
-    const rows = pageProducts.map((product) => ({
+    const rows = pageData.rows.map((product) => ({
       id: product.id,
       isSellable: product.isSellable,
       name: product.name,
-      primaryBarcode: product.barcodes[0]?.code ?? null,
+      primaryBarcode: product.primaryBarcode,
       costCents: product.costCents,
       priceCents: product.priceCents,
       stockQty: product.stockQty,
@@ -107,8 +63,8 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({
-      hasMore,
-      matchingProductsCount,
+      hasMore: pageData.hasMore,
+      matchingProductsCount: pageData.matchingProductsCount,
       rows,
     });
   } catch {

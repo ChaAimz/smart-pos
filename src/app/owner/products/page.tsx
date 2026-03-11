@@ -16,8 +16,15 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { FlashToast } from "@/components/ui/flash-toast";
 import { Input } from "@/components/ui/input";
+import { fetchOwnerProductPage, type OwnerProductListRow } from "@/lib/owner-product-list";
 import { requireOwnerSession } from "@/lib/owner-session";
 import { prisma } from "@/lib/prisma";
+import {
+  getOwnerProductDefaultSortOrder,
+  normalizeOwnerProductSort,
+  type OwnerProductSortKey,
+  type OwnerProductSortOrder,
+} from "@/lib/owner-product-sorting";
 import { type StoreCurrencyCode } from "@/lib/currency";
 import { getStoreCurrencyCode } from "@/lib/store-setting";
 import { ProductsVirtualTable } from "./products-virtual-table";
@@ -27,28 +34,18 @@ type OwnerProductsPageProps = {
     dialog?: string;
     error?: string;
     item?: string;
+    order?: string;
     q?: string;
+    sort?: string;
     status?: string;
   }>;
-};
-
-type ProductRow = {
-  costCents: number;
-  id: string;
-  isSellable: boolean;
-  name: string;
-  primaryBarcode: string | null;
-  priceCents: number;
-  sku: string;
-  stockQty: number;
-  updatedAt: Date;
 };
 
 type ProductData = {
   currencyCode: StoreCurrencyCode;
   hasMoreProducts: boolean;
   matchingProductsCount: number;
-  products: ProductRow[];
+  products: OwnerProductListRow[];
   sellableCount: number;
   totalCount: number;
 };
@@ -84,28 +81,6 @@ const updatedAtFormat = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
 });
 const PRODUCTS_PAGE_SIZE = 60;
-
-function buildProductWhere(query: string): Prisma.ProductWhereInput | undefined {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery) {
-    return undefined;
-  }
-
-  return {
-    OR: [
-      { name: { contains: normalizedQuery, mode: "insensitive" } },
-      { sku: { contains: normalizedQuery, mode: "insensitive" } },
-      {
-        barcodes: {
-          some: {
-            isPrimary: true,
-            code: { contains: normalizedQuery, mode: "insensitive" },
-          },
-        },
-      },
-    ],
-  };
-}
 
 function normalizeBarcodeCode(value: FormDataEntryValue | null) {
   return String(value ?? "")
@@ -392,62 +367,30 @@ async function deleteProductAction(formData: FormData) {
   redirect("/owner/products?status=product_deleted");
 }
 
-async function getProductData(query: string): Promise<ProductData> {
+async function getProductData(
+  query: string,
+  sortKey: OwnerProductSortKey,
+  sortOrder: OwnerProductSortOrder
+): Promise<ProductData> {
   try {
     const currencyCodePromise = getStoreCurrencyCode();
-    const productWhere = buildProductWhere(query);
-
-    const [rawProducts, totalCount, sellableCount, matchingProductsCount] = await prisma.$transaction([
-      prisma.product.findMany({
-        where: productWhere,
-        orderBy: { updatedAt: "desc" },
-        select: {
-          barcodes: {
-            where: { isPrimary: true },
-            orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
-            select: {
-              code: true,
-            },
-            take: 1,
-          },
-          id: true,
-          isSellable: true,
-          name: true,
-          costCents: true,
-          priceCents: true,
-          sku: true,
-          stockQty: true,
-          updatedAt: true,
-        },
-        take: PRODUCTS_PAGE_SIZE + 1,
+    const [pageData, totalCount, sellableCount] = await Promise.all([
+      fetchOwnerProductPage({
+        offset: 0,
+        pageSize: PRODUCTS_PAGE_SIZE,
+        query,
+        sortKey,
+        sortOrder,
       }),
       prisma.product.count(),
       prisma.product.count({ where: { isSellable: true } }),
-      prisma.product.count({ where: productWhere }),
     ]);
-
-    const hasMoreProducts = rawProducts.length > PRODUCTS_PAGE_SIZE;
-    const firstPageProducts = hasMoreProducts
-      ? rawProducts.slice(0, PRODUCTS_PAGE_SIZE)
-      : rawProducts;
-
-    const products: ProductRow[] = firstPageProducts.map((product) => ({
-      id: product.id,
-      isSellable: product.isSellable,
-      name: product.name,
-      primaryBarcode: product.barcodes[0]?.code ?? null,
-      costCents: product.costCents,
-      priceCents: product.priceCents,
-      sku: product.sku,
-      stockQty: product.stockQty,
-      updatedAt: product.updatedAt,
-    }));
 
     return {
       currencyCode: await currencyCodePromise,
-      hasMoreProducts,
-      matchingProductsCount,
-      products,
+      hasMoreProducts: pageData.hasMore,
+      matchingProductsCount: pageData.matchingProductsCount,
+      products: pageData.rows,
       sellableCount,
       totalCount,
     };
@@ -473,12 +416,22 @@ function toDialogMode(value: string | undefined): ProductDialogMode | null {
 function buildProductsPageHref(input: {
   dialog?: ProductDialogMode | null;
   item?: string | null;
+  order?: OwnerProductSortOrder;
   q?: string;
+  sort?: OwnerProductSortKey;
 }) {
   const params = new URLSearchParams();
   const query = (input.q ?? "").trim();
   if (query) {
     params.set("q", query);
+  }
+  const sortKey = input.sort ?? "updatedAt";
+  const sortOrder = input.order ?? getOwnerProductDefaultSortOrder(sortKey);
+  if (sortKey !== "updatedAt") {
+    params.set("sort", sortKey);
+  }
+  if (sortOrder !== getOwnerProductDefaultSortOrder(sortKey)) {
+    params.set("order", sortOrder);
   }
   if (input.dialog) {
     params.set("dialog", input.dialog);
@@ -539,14 +492,22 @@ export default async function OwnerProductsPage({
   const sessionUser = await requireOwnerSession();
   const params = await searchParams;
   const query = String(params.q ?? "").trim();
-  const data = await getProductData(query);
+  const { sortKey, sortOrder } = normalizeOwnerProductSort({
+    order: params.order,
+    sort: params.sort,
+  });
+  const data = await getProductData(query, sortKey, sortOrder);
   const dialogMode = toDialogMode(params.dialog);
   const dialogItemId = String(params.item ?? "").trim();
   const dialogItem =
     dialogMode && dialogMode !== "new"
       ? await getProductDialogItem(dialogItemId)
       : null;
-  const closeDialogHref = buildProductsPageHref({ q: query });
+  const closeDialogHref = buildProductsPageHref({
+    order: sortOrder,
+    q: query,
+    sort: sortKey,
+  });
 
   const statusMessage = params.status ? statusMessages[params.status] : undefined;
   const errorMessage = params.error ? errorMessages[params.error] : undefined;
@@ -595,10 +556,12 @@ export default async function OwnerProductsPage({
         <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
           <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-4">
             <ProductsVirtualTable
-              key={query || "__all_products__"}
+              key={`${query || "__all_products__"}:${sortKey}:${sortOrder}`}
               currencyCode={data.currencyCode}
               hasMore={data.hasMoreProducts}
               initialQuery={query}
+              initialSortKey={sortKey}
+              initialSortOrder={sortOrder}
               matchingProductsCount={data.matchingProductsCount}
               products={data.products.map((product) => ({
                 costCents: product.costCents,

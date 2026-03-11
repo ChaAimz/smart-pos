@@ -2,7 +2,7 @@
 
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { MoreHorizontal, PackagePlus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, MoreHorizontal, PackagePlus, Search } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,6 +15,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  getOwnerProductDefaultSortOrder,
+  type OwnerProductSortKey,
+  type OwnerProductSortOrder,
+} from "@/lib/owner-product-sorting";
 import {
   Table,
   TableBody,
@@ -42,6 +47,8 @@ type ProductsVirtualTableProps = {
   currencyCode: StoreCurrencyCode;
   hasMore: boolean;
   initialQuery: string;
+  initialSortKey: OwnerProductSortKey;
+  initialSortOrder: OwnerProductSortOrder;
   matchingProductsCount: number;
   products: ProductsVirtualTableRow[];
 };
@@ -57,12 +64,22 @@ type ProductsApiPayload = {
 function buildProductsPageHref(input: {
   dialog?: ProductDialogMode | null;
   item?: string | null;
+  order?: OwnerProductSortOrder;
   q?: string;
+  sort?: OwnerProductSortKey;
 }) {
   const params = new URLSearchParams();
   const query = (input.q ?? "").trim();
   if (query) {
     params.set("q", query);
+  }
+  const sortKey = input.sort ?? "updatedAt";
+  const sortOrder = input.order ?? getOwnerProductDefaultSortOrder(sortKey);
+  if (sortKey !== "updatedAt") {
+    params.set("sort", sortKey);
+  }
+  if (sortOrder !== getOwnerProductDefaultSortOrder(sortKey)) {
+    params.set("order", sortOrder);
   }
   if (input.dialog) {
     params.set("dialog", input.dialog);
@@ -78,6 +95,16 @@ function buildProductsPageHref(input: {
 
 function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
   return formatCurrencyFromCents(cents, currencyCode);
+}
+
+function formatMargin(cents: number, currencyCode: StoreCurrencyCode) {
+  if (cents > 0) {
+    return `+${formatPrice(cents, currencyCode)}`;
+  }
+  if (cents < 0) {
+    return `-${formatPrice(Math.abs(cents), currencyCode)}`;
+  }
+  return formatPrice(0, currencyCode);
 }
 
 function columnClassName(columnId: string) {
@@ -96,6 +123,9 @@ function columnClassName(columnId: string) {
   if (columnId === "priceCents") {
     return "w-24";
   }
+  if (columnId === "marginCents") {
+    return "w-24";
+  }
   if (columnId === "isSellable") {
     return "w-28";
   }
@@ -108,10 +138,30 @@ function columnClassName(columnId: string) {
   return "";
 }
 
+function nextSortState(
+  currentSortKey: OwnerProductSortKey,
+  currentSortOrder: OwnerProductSortOrder,
+  targetSortKey: OwnerProductSortKey
+) {
+  if (currentSortKey !== targetSortKey) {
+    return {
+      sortKey: targetSortKey,
+      sortOrder: getOwnerProductDefaultSortOrder(targetSortKey),
+    };
+  }
+
+  return {
+    sortKey: targetSortKey,
+    sortOrder: currentSortOrder === "asc" ? ("desc" as const) : ("asc" as const),
+  };
+}
+
 export function ProductsVirtualTable({
   currencyCode,
   hasMore,
   initialQuery,
+  initialSortKey,
+  initialSortOrder,
   matchingProductsCount,
   products,
 }: ProductsVirtualTableProps) {
@@ -123,6 +173,8 @@ export function ProductsVirtualTable({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
+  const [sortKey, setSortKey] = useState<OwnerProductSortKey>(initialSortKey);
+  const [sortOrder, setSortOrder] = useState<OwnerProductSortOrder>(initialSortOrder);
 
   const scrollElementRef = useRef<HTMLDivElement>(null);
   const requestedOffsetRef = useRef<string | null>(null);
@@ -146,23 +198,36 @@ export function ProductsVirtualTable({
     setLoadError(null);
     setQuery(initialQuery);
     setDebouncedQuery(initialQuery);
+    setSortKey(initialSortKey);
+    setSortOrder(initialSortOrder);
     setIsLoadingMore(false);
     setIsRefreshing(false);
     requestedOffsetRef.current = null;
     queryTokenRef.current += 1;
     isFirstDynamicQueryRef.current = true;
-  }, [hasMore, initialQuery, matchingProductsCount, products]);
+  }, [
+    hasMore,
+    initialQuery,
+    initialSortKey,
+    initialSortOrder,
+    matchingProductsCount,
+    products,
+  ]);
 
   const fetchPage = useCallback(
     async (input: {
       append: boolean;
       offset: number;
       queryValue: string;
+      sortKeyValue: OwnerProductSortKey;
+      sortOrderValue: OwnerProductSortOrder;
       token: number;
     }) => {
       const searchParams = new URLSearchParams({
         offset: String(input.offset),
+        order: input.sortOrderValue,
         q: input.queryValue,
+        sort: input.sortKeyValue,
       });
 
       const response = await fetch(`/api/owner/products?${searchParams.toString()}`, {
@@ -216,6 +281,8 @@ export function ProductsVirtualTable({
           append: false,
           offset: 0,
           queryValue: debouncedQuery,
+          sortKeyValue: sortKey,
+          sortOrderValue: sortOrder,
           token: nextToken,
         });
       } catch {
@@ -233,11 +300,11 @@ export function ProductsVirtualTable({
         }
       }
     })();
-  }, [debouncedQuery, fetchPage]);
+  }, [debouncedQuery, fetchPage, sortKey, sortOrder]);
 
   const loadMore = useCallback(async () => {
     const offset = rows.length;
-    const requestKey = `${debouncedQuery}:${offset}`;
+    const requestKey = `${debouncedQuery}:${sortKey}:${sortOrder}:${offset}`;
 
     if (
       !hasMoreRows ||
@@ -259,6 +326,8 @@ export function ProductsVirtualTable({
         append: true,
         offset,
         queryValue: debouncedQuery,
+        sortKeyValue: sortKey,
+        sortOrderValue: sortOrder,
         token,
       });
     } catch {
@@ -271,15 +340,56 @@ export function ProductsVirtualTable({
         setIsLoadingMore(false);
       }
     }
-  }, [debouncedQuery, fetchPage, hasMoreRows, isLoadingMore, isRefreshing, rows.length]);
+  }, [
+    debouncedQuery,
+    fetchPage,
+    hasMoreRows,
+    isLoadingMore,
+    isRefreshing,
+    rows.length,
+    sortKey,
+    sortOrder,
+  ]);
 
   const activeQuery = query.trim();
+
+  const renderSortableHeader = useCallback(
+    (label: string, targetSortKey: OwnerProductSortKey) => {
+      const isActiveSort = sortKey === targetSortKey;
+
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-8 gap-1 px-2 font-medium"
+          onClick={() => {
+            const nextSort = nextSortState(sortKey, sortOrder, targetSortKey);
+            setSortKey(nextSort.sortKey);
+            setSortOrder(nextSort.sortOrder);
+          }}
+        >
+          {label}
+          {isActiveSort ? (
+            sortOrder === "asc" ? (
+              <ArrowUp className="size-4" aria-hidden="true" />
+            ) : (
+              <ArrowDown className="size-4" aria-hidden="true" />
+            )
+          ) : (
+            <ArrowUpDown className="size-4 text-muted-foreground" aria-hidden="true" />
+          )}
+        </Button>
+      );
+    },
+    [sortKey, sortOrder]
+  );
 
   const columns = useMemo<Array<ColumnDef<ProductsVirtualTableRow>>>(
     () => [
       {
         accessorKey: "name",
-        header: "Name",
+        header: () => renderSortableHeader("Name", "name"),
         cell: ({ row }) => (
           <span className="block max-w-80 truncate font-medium">{row.original.name}</span>
         ),
@@ -295,31 +405,51 @@ export function ProductsVirtualTable({
       },
       {
         accessorKey: "stockQty",
-        header: "Stock",
+        header: () => renderSortableHeader("Stock", "stockQty"),
         cell: ({ row }) => row.original.stockQty,
       },
       {
         accessorKey: "costCents",
-        header: "Cost",
+        header: () => renderSortableHeader("Cost", "costCents"),
         cell: ({ row }) => formatPrice(row.original.costCents, currencyCode),
       },
       {
         accessorKey: "priceCents",
-        header: "Price",
+        header: () => renderSortableHeader("Price", "priceCents"),
         cell: ({ row }) => formatPrice(row.original.priceCents, currencyCode),
       },
       {
+        id: "marginCents",
+        header: () => renderSortableHeader("Margin", "marginCents"),
+        cell: ({ row }) => {
+          const marginCents = row.original.priceCents - row.original.costCents;
+          return (
+            <span
+              className={cn(
+                marginCents > 0 && "text-emerald-600",
+                marginCents < 0 && "text-destructive"
+              )}
+            >
+              {formatMargin(marginCents, currencyCode)}
+            </span>
+          );
+        },
+      },
+      {
         accessorKey: "isSellable",
-        header: "Status",
+        header: () => renderSortableHeader("Status", "isSellable"),
         cell: ({ row }) => (
-          <Badge variant={row.original.isSellable ? "secondary" : "outline"}>
+          <Badge
+            variant={row.original.isSellable ? "secondary" : "outline"}
+            className={cn(row.original.isSellable && "bg-emerald-100 text-emerald-700")}
+          >
             {row.original.isSellable ? "Sellable" : "Blocked"}
           </Badge>
         ),
       },
       {
         accessorKey: "updatedAtLabel",
-        header: "Updated",
+        header: () => renderSortableHeader("Updated", "updatedAt"),
       },
       {
         id: "actions",
@@ -340,9 +470,11 @@ export function ProductsVirtualTable({
               <DropdownMenuItem asChild>
                 <Link
                   href={buildProductsPageHref({
+                    order: sortOrder,
                     q: activeQuery,
                     dialog: "edit",
                     item: row.original.id,
+                    sort: sortKey,
                   })}
                 >
                   Edit
@@ -351,9 +483,11 @@ export function ProductsVirtualTable({
               <DropdownMenuItem asChild variant="destructive">
                 <Link
                   href={buildProductsPageHref({
+                    order: sortOrder,
                     q: activeQuery,
                     dialog: "delete",
                     item: row.original.id,
+                    sort: sortKey,
                   })}
                 >
                   Delete
@@ -364,7 +498,7 @@ export function ProductsVirtualTable({
         ),
       },
     ],
-    [activeQuery, currencyCode]
+    [activeQuery, currencyCode, renderSortableHeader, sortKey, sortOrder]
   );
 
   const table = useReactTable({
@@ -435,7 +569,14 @@ export function ProductsVirtualTable({
           />
         </div>
         <Button asChild>
-          <Link href={buildProductsPageHref({ q: activeQuery, dialog: "new" })}>
+          <Link
+            href={buildProductsPageHref({
+              order: sortOrder,
+              q: activeQuery,
+              dialog: "new",
+              sort: sortKey,
+            })}
+          >
             <PackagePlus className="size-4" aria-hidden="true" />
             New Item
           </Link>
@@ -446,7 +587,7 @@ export function ProductsVirtualTable({
         ref={scrollElementRef}
         className="min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-md border"
       >
-        <Table className="min-w-[1060px]">
+        <Table className="min-w-[1140px]">
           <TableCaption>
             Showing {rows.length} of {listCount} products.
             {isRefreshing ? " Updating..." : ""}
