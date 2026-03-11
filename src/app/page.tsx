@@ -14,19 +14,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { OwnerShell } from "@/components/layout/owner-shell";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { requireOwnerSession } from "@/lib/owner-session";
 import { prisma } from "@/lib/prisma";
-import { getMonthlySalesGoalCents } from "@/lib/store-setting";
+import { getMonthlySalesGoalCents, getStoreCurrencyCode } from "@/lib/store-setting";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TREND_RANGE_OPTIONS = [7, 14, 30, 365] as const;
 const DEFAULT_TREND_RANGE_DAYS = 14 as const;
 type TrendRangeDays = (typeof TREND_RANGE_OPTIONS)[number];
-
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
 
 const dayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "UTC",
@@ -42,6 +38,7 @@ const dayLabelFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 type DashboardData = {
+  currencyCode: StoreCurrencyCode;
   dailyTrend: Array<{
     cashRevenueCents: number;
     creditCardRevenueCents: number;
@@ -138,6 +135,7 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
 
   try {
     const monthlyGoalCentsPromise = getMonthlySalesGoalCents();
+    const currencyCodePromise = getStoreCurrencyCode();
     const [
       monthRevenue,
       inventoryValuationRows,
@@ -208,6 +206,7 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
 
     const thisMonthRevenueCents = monthRevenue._sum.totalCents ?? 0;
     const monthlyGoalCents = await monthlyGoalCentsPromise;
+    const currencyCode = await currencyCodePromise;
     const dailyGoalCents = monthlyGoalCents > 0 ? Math.round(monthlyGoalCents / daysInMonth) : 0;
     const monthGoalProgressPct =
       monthlyGoalCents > 0 ? (thisMonthRevenueCents / monthlyGoalCents) * 100 : 0;
@@ -314,6 +313,7 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
     const recentSalesCount = dailyTrend.reduce((sum, item) => sum + item.salesCount, 0);
 
     return {
+      currencyCode,
       dailyTrend,
       dbStatus: "up",
       paymentMix,
@@ -332,6 +332,7 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
     };
   } catch {
     return {
+      currencyCode: "ZAR",
       dailyTrend: dailyBuckets.map((bucket) => ({
         cashRevenueCents: 0,
         creditCardRevenueCents: 0,
@@ -363,8 +364,8 @@ async function getDashboardData(trendRangeDays: TrendRangeDays): Promise<Dashboa
   }
 }
 
-function formatPrice(cents: number) {
-  return usd.format(cents / 100);
+function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode);
 }
 
 function clampProgressPercent(value: number) {
@@ -460,7 +461,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Avg order {formatPrice(todayAverageOrderCents)}
+                Avg order {formatPrice(todayAverageOrderCents, data.currencyCode)}
               </p>
             </div>
           </CardHeader>
@@ -472,12 +473,12 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                 <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
                 Today Revenue
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.todayRevenueCents)}</CardTitle>
+              <CardTitle className="text-3xl">{formatPrice(data.todayRevenueCents, data.currencyCode)}</CardTitle>
               <CardDescription>Daily goal progress</CardDescription>
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">{dayGoalPercentText} of {formatPrice(data.dailyGoalCents)}</span>
+                <span className="text-muted-foreground">{dayGoalPercentText} of {formatPrice(data.dailyGoalCents, data.currencyCode)}</span>
                 <Badge variant="secondary" className={dayGoalTone.badgeClassName}>
                   {dayGoalTone.label}
                 </Badge>
@@ -490,7 +491,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
               </div>
               <p className="text-xs text-muted-foreground">
                 {dayGoalGapCents > 0
-                  ? `${formatPrice(dayGoalGapCents)} left to goal`
+                  ? `${formatPrice(dayGoalGapCents, data.currencyCode)} left to goal`
                   : "Goal reached"}
               </p>
             </div>
@@ -503,13 +504,13 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                 <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
                 Month Revenue
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.thisMonthRevenueCents)}</CardTitle>
+              <CardTitle className="text-3xl">{formatPrice(data.thisMonthRevenueCents, data.currencyCode)}</CardTitle>
               <CardDescription>Monthly goal progress</CardDescription>
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-muted-foreground">
-                  {monthGoalPercentText} of {formatPrice(data.monthlyGoalCents)}
+                  {monthGoalPercentText} of {formatPrice(data.monthlyGoalCents, data.currencyCode)}
                 </span>
                 <Badge variant="secondary" className={monthGoalTone.badgeClassName}>
                   {monthGoalTone.label}
@@ -523,7 +524,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
               </div>
               <p className="text-xs text-muted-foreground">
                 {monthGoalGapCents > 0
-                  ? `${formatPrice(monthGoalGapCents)} left this month`
+                  ? `${formatPrice(monthGoalGapCents, data.currencyCode)} left this month`
                   : "Monthly goal reached"}
               </p>
             </div>
@@ -574,13 +575,13 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
                 <Package className="size-4 text-muted-foreground" aria-hidden="true" />
                 Inventory Value
               </CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.inventorySellValueCents)}</CardTitle>
+              <CardTitle className="text-3xl">{formatPrice(data.inventorySellValueCents, data.currencyCode)}</CardTitle>
               <CardDescription>Estimated sell value in stock</CardDescription>
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Cost</span>
-                <span className="font-medium tabular-nums">{formatPrice(data.inventoryCostValueCents)}</span>
+                <span className="font-medium tabular-nums">{formatPrice(data.inventoryCostValueCents, data.currencyCode)}</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
@@ -592,7 +593,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
               </div>
               <p className="text-xs text-muted-foreground">
                 Margin {inventoryMarginPositive ? "+" : "-"}
-                {formatPrice(Math.abs(inventoryMarginCents))}
+                {formatPrice(Math.abs(inventoryMarginCents), data.currencyCode)}
               </p>
             </div>
           </CardHeader>
@@ -601,6 +602,7 @@ export default async function Home({ searchParams }: OwnerOverviewPageProps) {
 
       <section className="mt-6">
         <OverviewCharts
+          currencyCode={data.currencyCode}
           dailyTrend={data.dailyTrend}
           paymentMix={data.paymentMix}
           trendRangeLabel={trendRangeLabel}

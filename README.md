@@ -80,6 +80,10 @@ npm run docker:build
 npm run docker:up
 ```
 
+Then open `http://localhost` (port `80`).
+
+Note: HTTPS on port `443` requires a reverse proxy + TLS certificate (for example Nginx/Caddy + Let's Encrypt).
+
 ## Optional: full Docker stack (web + db)
 The `web` service is optional and behind a profile.
 

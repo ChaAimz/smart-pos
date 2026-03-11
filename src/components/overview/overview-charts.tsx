@@ -27,13 +27,8 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import Link from "next/link";
-
-const compactUsd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 const revenueChartConfig = {
   cashRevenueCents: {
@@ -73,6 +68,7 @@ const productsChartConfig = {
 } satisfies ChartConfig;
 
 type OverviewChartsProps = {
+  currencyCode: StoreCurrencyCode;
   dailyTrend: Array<{
     cashRevenueCents: number;
     creditCardRevenueCents: number;
@@ -100,8 +96,10 @@ type OverviewChartsProps = {
   }>;
 };
 
-function formatCompactPrice(cents: number) {
-  return compactUsd.format(cents / 100);
+function formatCompactPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode, {
+    maximumFractionDigits: 0,
+  });
 }
 
 function shortenName(value: string) {
@@ -113,6 +111,7 @@ function shortenName(value: string) {
 }
 
 export function OverviewCharts({
+  currencyCode,
   dailyTrend,
   paymentMix,
   trendRangeLabel,
@@ -191,7 +190,9 @@ export function OverviewCharts({
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
-                  tickFormatter={(value) => `$${Math.round(Number(value) / 100)}`}
+                  tickFormatter={(value) =>
+                    formatCompactPrice(Math.round(Number(value)), currencyCode)
+                  }
                 />
                 <ChartTooltip
                   cursor={false}
@@ -204,7 +205,8 @@ export function OverviewCharts({
                               (sum, item) => sum + Number(item.value ?? 0),
                               0
                             )
-                          )
+                          ),
+                          currencyCode
                         )}`
                       }
                       formatter={(value, name) => {
@@ -217,7 +219,7 @@ export function OverviewCharts({
                                 ? "Credit Card"
                                 : String(name);
 
-                        return `${methodLabel}: ${formatCompactPrice(Number(value))}`;
+                        return `${methodLabel}: ${formatCompactPrice(Number(value), currencyCode)}`;
                       }}
                     />
                   }
@@ -246,7 +248,7 @@ export function OverviewCharts({
             </ChartContainer>
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
               <span>{totalRecentSales} orders</span>
-              <span>{formatCompactPrice(totalRecentRevenueCents)}</span>
+              <span>{formatCompactPrice(totalRecentRevenueCents, currencyCode)}</span>
             </div>
           </CardContent>
         </Card>
@@ -272,7 +274,7 @@ export function OverviewCharts({
                         nameKey="key"
                         formatter={(value, _, item) => {
                           const revenue = Number(item.payload.revenueCents ?? 0);
-                          return `${value} orders • ${formatCompactPrice(revenue)}`;
+                          return `${value} orders • ${formatCompactPrice(revenue, currencyCode)}`;
                         }}
                       />
                     }

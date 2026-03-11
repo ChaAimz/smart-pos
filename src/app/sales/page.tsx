@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { SalesShell } from "@/components/layout/sales-shell";
 import { SalesWorkspace } from "@/components/sales/sales-workspace";
 import { type AppUserRole, getHomePathForRole } from "@/lib/auth";
+import { type StoreCurrencyCode } from "@/lib/currency";
 import { canOperateSales } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
-import { getMonthlySalesGoalCents } from "@/lib/store-setting";
+import { getMonthlySalesGoalCents, getStoreCurrencyCode } from "@/lib/store-setting";
 
 type WorkspaceMode = "sales" | "manage";
 
@@ -18,6 +19,7 @@ type SalesPageProps = {
 };
 
 type SalesDashboardData = {
+  currencyCode: StoreCurrencyCode;
   todaySalesCount: number;
   todayRevenueCents: number;
   todayPaymentBreakdownCents: {
@@ -73,6 +75,7 @@ async function getSalesDashboardData(
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
   const monthlyGoalCentsPromise = getMonthlySalesGoalCents();
+  const currencyCodePromise = getStoreCurrencyCode();
   const [
     todaySalesCount,
     todaySalesAggregate,
@@ -161,6 +164,7 @@ async function getSalesDashboardData(
   const todayRevenueCents = todaySalesAggregate._sum.totalCents ?? 0;
   const thisMonthRevenueCents = monthSalesAggregate._sum.totalCents ?? 0;
   const monthlyGoalCents = await monthlyGoalCentsPromise;
+  const currencyCode = await currencyCodePromise;
   const todayGoalCents = monthlyGoalCents > 0 ? Math.round(monthlyGoalCents / daysInMonth) : 0;
   const todayProgressPct = todayGoalCents > 0 ? (todayRevenueCents / todayGoalCents) * 100 : 0;
   const monthProgressPct = monthlyGoalCents > 0 ? (thisMonthRevenueCents / monthlyGoalCents) * 100 : 0;
@@ -213,6 +217,7 @@ async function getSalesDashboardData(
     : null;
 
   return {
+    currencyCode,
     todaySalesCount,
     todayRevenueCents,
     todayPaymentBreakdownCents,
@@ -252,6 +257,7 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
 
   return (
     <SalesShell
+      currencyCode={data.currencyCode}
       userEmail={sessionUser.email}
       todaySalesCount={data.todaySalesCount}
       todayRevenueCents={data.todayRevenueCents}
@@ -267,6 +273,7 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
       workspaceMode={workspaceMode}
     >
       <SalesWorkspace
+        currencyCode={data.currencyCode}
         workspaceMode={workspaceMode}
         isLargeText={isLargeText}
         userRole={userRole}

@@ -18,6 +18,8 @@ import { FlashToast } from "@/components/ui/flash-toast";
 import { Input } from "@/components/ui/input";
 import { requireOwnerSession } from "@/lib/owner-session";
 import { prisma } from "@/lib/prisma";
+import { type StoreCurrencyCode } from "@/lib/currency";
+import { getStoreCurrencyCode } from "@/lib/store-setting";
 import { ProductsVirtualTable } from "./products-virtual-table";
 
 type OwnerProductsPageProps = {
@@ -43,6 +45,7 @@ type ProductRow = {
 };
 
 type ProductData = {
+  currencyCode: StoreCurrencyCode;
   dbStatus: "up" | "down";
   hasMoreProducts: boolean;
   matchingProductsCount: number;
@@ -392,6 +395,7 @@ async function deleteProductAction(formData: FormData) {
 
 async function getProductData(query: string): Promise<ProductData> {
   try {
+    const currencyCodePromise = getStoreCurrencyCode();
     const productWhere = buildProductWhere(query);
 
     const [rawProducts, totalCount, sellableCount, matchingProductsCount] = await prisma.$transaction([
@@ -441,6 +445,7 @@ async function getProductData(query: string): Promise<ProductData> {
     }));
 
     return {
+      currencyCode: await currencyCodePromise,
       dbStatus: "up",
       hasMoreProducts,
       matchingProductsCount,
@@ -450,6 +455,7 @@ async function getProductData(query: string): Promise<ProductData> {
     };
   } catch {
     return {
+      currencyCode: "ZAR",
       dbStatus: "down",
       hasMoreProducts: false,
       matchingProductsCount: 0,
@@ -594,6 +600,7 @@ export default async function OwnerProductsPage({
           <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-2">
             <ProductsVirtualTable
               key={query || "__all_products__"}
+              currencyCode={data.currencyCode}
               hasMore={data.hasMoreProducts}
               initialQuery={query}
               matchingProductsCount={data.matchingProductsCount}

@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 export type ProductsVirtualTableRow = {
@@ -38,6 +39,7 @@ export type ProductsVirtualTableRow = {
 };
 
 type ProductsVirtualTableProps = {
+  currencyCode: StoreCurrencyCode;
   hasMore: boolean;
   initialQuery: string;
   matchingProductsCount: number;
@@ -74,8 +76,8 @@ function buildProductsPageHref(input: {
   return search ? `/owner/products?${search}` : "/owner/products";
 }
 
-function formatPrice(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode);
 }
 
 function columnClassName(columnId: string) {
@@ -107,6 +109,7 @@ function columnClassName(columnId: string) {
 }
 
 export function ProductsVirtualTable({
+  currencyCode,
   hasMore,
   initialQuery,
   matchingProductsCount,
@@ -298,12 +301,12 @@ export function ProductsVirtualTable({
       {
         accessorKey: "costCents",
         header: "Cost",
-        cell: ({ row }) => formatPrice(row.original.costCents),
+        cell: ({ row }) => formatPrice(row.original.costCents, currencyCode),
       },
       {
         accessorKey: "priceCents",
         header: "Price",
-        cell: ({ row }) => formatPrice(row.original.priceCents),
+        cell: ({ row }) => formatPrice(row.original.priceCents, currencyCode),
       },
       {
         accessorKey: "isSellable",
@@ -361,7 +364,7 @@ export function ProductsVirtualTable({
         ),
       },
     ],
-    [activeQuery]
+    [activeQuery, currencyCode]
   );
 
   const table = useReactTable({

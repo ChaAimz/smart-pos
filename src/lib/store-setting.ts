@@ -1,4 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import {
+  DEFAULT_STORE_CURRENCY_CODE,
+  normalizeStoreCurrencyCode,
+  type StoreCurrencyCode,
+} from "@/lib/currency";
 
 const DEFAULT_STORE_SETTING_ID = "default";
 const DEFAULT_THEME_PRIMARY_HEX = "#111315";
@@ -9,6 +14,7 @@ type StoreSettingFindUniqueArgs = {
   select: {
     monthlySalesGoalCents?: true;
     themePrimaryHex?: true;
+    currencyCode?: true;
   };
 };
 
@@ -17,18 +23,20 @@ type StoreSettingUpsertArgs = {
   update: {
     monthlySalesGoalCents?: number;
     themePrimaryHex?: string;
+    currencyCode?: string;
   };
   create: {
     id: string;
     monthlySalesGoalCents?: number;
     themePrimaryHex?: string;
+    currencyCode?: string;
   };
 };
 
 type StoreSettingDelegate = {
   findUnique: (
     args: StoreSettingFindUniqueArgs
-  ) => Promise<{ monthlySalesGoalCents?: number; themePrimaryHex?: string } | null>;
+  ) => Promise<{ monthlySalesGoalCents?: number; themePrimaryHex?: string; currencyCode?: string } | null>;
   upsert: (args: StoreSettingUpsertArgs) => Promise<unknown>;
 };
 
@@ -164,6 +172,74 @@ export async function upsertThemePrimaryHex(themePrimaryHex: string) {
     ON CONFLICT ("id")
     DO UPDATE
     SET "themePrimaryHex" = EXCLUDED."themePrimaryHex",
+        "updatedAt" = NOW()
+  `;
+}
+
+export async function getStoreCurrencyCode(): Promise<StoreCurrencyCode> {
+  const delegate = getStoreSettingDelegate();
+
+  if (delegate && typeof delegate.findUnique === "function") {
+    try {
+      const setting = await delegate.findUnique({
+        where: {
+          id: DEFAULT_STORE_SETTING_ID,
+        },
+        select: {
+          currencyCode: true,
+        },
+      });
+
+      return normalizeStoreCurrencyCode(setting?.currencyCode);
+    } catch {
+      // Fall through to SQL path when Prisma client is not yet regenerated.
+    }
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ currencyCode: string | null }>>`
+      SELECT "currencyCode"
+      FROM "StoreSetting"
+      WHERE "id" = ${DEFAULT_STORE_SETTING_ID}
+      LIMIT 1
+    `;
+
+    return normalizeStoreCurrencyCode(rows[0]?.currencyCode);
+  } catch {
+    return DEFAULT_STORE_CURRENCY_CODE;
+  }
+}
+
+export async function upsertStoreCurrencyCode(currencyCode: string) {
+  const normalizedCurrencyCode = normalizeStoreCurrencyCode(currencyCode);
+  const delegate = getStoreSettingDelegate();
+
+  if (delegate && typeof delegate.upsert === "function") {
+    try {
+      await delegate.upsert({
+        where: {
+          id: DEFAULT_STORE_SETTING_ID,
+        },
+        update: {
+          currencyCode: normalizedCurrencyCode,
+        },
+        create: {
+          id: DEFAULT_STORE_SETTING_ID,
+          currencyCode: normalizedCurrencyCode,
+        },
+      });
+      return;
+    } catch {
+      // Fall through to SQL path when Prisma client is not yet regenerated.
+    }
+  }
+
+  await prisma.$executeRaw`
+    INSERT INTO "StoreSetting" ("id", "currencyCode", "createdAt", "updatedAt")
+    VALUES (${DEFAULT_STORE_SETTING_ID}, ${normalizedCurrencyCode}, NOW(), NOW())
+    ON CONFLICT ("id")
+    DO UPDATE
+    SET "currencyCode" = EXCLUDED."currencyCode",
         "updatedAt" = NOW()
   `;
 }

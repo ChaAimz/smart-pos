@@ -13,7 +13,7 @@ services:
       retries: 10
       start_period: 5s
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -25,16 +25,18 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
-      NODE_ENV: development
+      NODE_ENV: production
+      RUN_DB_SEED: ${RUN_DB_SEED:-false}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-80}:3000"
     volumes:
       - ./:/app
       - /app/node_modules
-    command: ["sh", "/app/docker/start.sh"]
+    command: ["sh", "/app/docker/start-prod.sh"]
 
 volumes:
   postgres_data:

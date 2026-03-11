@@ -1,4 +1,4 @@
-import { Palette, Target } from "lucide-react";
+import { Coins, Palette, Target } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -22,9 +22,16 @@ import { Input } from "@/components/ui/input";
 import { requireOwnerSession } from "@/lib/owner-session";
 import { prisma } from "@/lib/prisma";
 import {
+  formatCurrencyFromCents,
+  getStoreCurrencyOptions,
+  type StoreCurrencyCode,
+} from "@/lib/currency";
+import {
   getMonthlySalesGoalCents,
+  getStoreCurrencyCode,
   getThemePrimaryHex,
   upsertMonthlySalesGoalCents,
+  upsertStoreCurrencyCode,
   upsertThemePrimaryHex,
 } from "@/lib/store-setting";
 
@@ -36,19 +43,23 @@ type OwnerSettingsPageProps = {
 };
 
 type OwnerSettingsData = {
+  currencyCode: StoreCurrencyCode;
   dbStatus: "up" | "down";
   monthlyGoalCents: number;
   themePrimaryHex: string;
 };
 
 const statusMessages: Record<string, string> = {
+  currency_saved: "Currency saved.",
   goal_saved: "Monthly revenue goal saved.",
   theme_saved: "Theme color saved.",
 };
 
 const errorMessages: Record<string, string> = {
   invalid_monthly_goal: "Please enter a valid monthly goal.",
+  invalid_currency: "Please choose a supported currency.",
   invalid_theme_color: "Please pick a valid theme color.",
+  currency_save_failed: "Unable to save currency right now.",
   goal_save_failed: "Unable to save monthly goal right now.",
   theme_save_failed: "Unable to save theme color right now.",
 };
@@ -65,14 +76,14 @@ async function updateMonthlyGoalAction(formData: FormData) {
   "use server";
 
   await requireOwnerSession();
-  const rawValue = String(formData.get("monthlyGoalUsd") ?? "").trim();
-  const monthlyGoalUsd = Number(rawValue);
+  const rawValue = String(formData.get("monthlyGoalAmount") ?? "").trim();
+  const monthlyGoalAmount = Number(rawValue);
 
-  if (!Number.isFinite(monthlyGoalUsd) || monthlyGoalUsd < 0) {
+  if (!Number.isFinite(monthlyGoalAmount) || monthlyGoalAmount < 0) {
     redirect("/owner/settings?error=invalid_monthly_goal");
   }
 
-  const monthlySalesGoalCents = Math.round(monthlyGoalUsd * 100);
+  const monthlySalesGoalCents = Math.round(monthlyGoalAmount * 100);
 
   try {
     await upsertMonthlySalesGoalCents(monthlySalesGoalCents);
@@ -85,6 +96,32 @@ async function updateMonthlyGoalAction(formData: FormData) {
   revalidatePath("/owner/settings");
   revalidatePath("/sales");
   redirect("/owner/settings?status=goal_saved");
+}
+
+async function updateCurrencyAction(formData: FormData) {
+  "use server";
+
+  await requireOwnerSession();
+  const currencyCode = String(formData.get("currencyCode") ?? "").trim();
+
+  if (!["USD", "THB", "ZAR"].includes(currencyCode)) {
+    redirect("/owner/settings?error=invalid_currency");
+  }
+
+  try {
+    await upsertStoreCurrencyCode(currencyCode);
+  } catch {
+    redirect("/owner/settings?error=currency_save_failed");
+  }
+
+  revalidatePath("/");
+  revalidatePath("/owner");
+  revalidatePath("/owner/reports");
+  revalidatePath("/owner/products");
+  revalidatePath("/owner/activity");
+  revalidatePath("/owner/settings");
+  revalidatePath("/sales");
+  redirect("/owner/settings?status=currency_saved");
 }
 
 async function updateThemeAction(formData: FormData) {
@@ -114,21 +151,24 @@ async function updateThemeAction(formData: FormData) {
 }
 
 async function getOwnerSettingsData(): Promise<OwnerSettingsData> {
-  const [monthlyGoalCents, themePrimaryHex] = await Promise.all([
+  const [monthlyGoalCents, themePrimaryHex, currencyCode] = await Promise.all([
     getMonthlySalesGoalCents(),
     getThemePrimaryHex(),
+    getStoreCurrencyCode(),
   ]);
 
   try {
     await prisma.$queryRaw`SELECT 1`;
     return {
       dbStatus: "up",
+      currencyCode,
       monthlyGoalCents,
       themePrimaryHex,
     };
   } catch {
     return {
       dbStatus: "down",
+      currencyCode,
       monthlyGoalCents,
       themePrimaryHex,
     };
@@ -142,6 +182,8 @@ export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsP
 
   const statusMessage = params.status ? statusMessages[params.status] : undefined;
   const errorMessage = params.error ? errorMessages[params.error] : undefined;
+  const currencyOptions = getStoreCurrencyOptions();
+  const monthlyGoalLabelAmount = formatCurrencyFromCents(data.monthlyGoalCents, data.currencyCode);
 
   return (
     <OwnerShell
@@ -165,6 +207,46 @@ export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsP
         <Card className="gap-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
+              <Coins className="size-4 text-muted-foreground" aria-hidden="true" />
+              Currency
+            </CardTitle>
+            <CardDescription>
+              Choose the currency used across dashboard, sales, products, and reports.
+            </CardDescription>
+          </CardHeader>
+          <div className="border-t" />
+          <CardContent className="pt-4">
+            <form action={updateCurrencyAction}>
+              <FieldGroup className="gap-4">
+                <Field className="gap-2">
+                  <FieldLabel htmlFor="currencyCode">Store currency</FieldLabel>
+                  <select
+                    id="currencyCode"
+                    name="currencyCode"
+                    defaultValue={data.currencyCode}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    {currencyOptions.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldDescription>
+                    Current goal display: {monthlyGoalLabelAmount}
+                  </FieldDescription>
+                </Field>
+                <div className="flex justify-end">
+                  <Button type="submit">Save Currency</Button>
+                </div>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="gap-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
               <Target className="size-4 text-muted-foreground" aria-hidden="true" />
               Monthly Goal Setting
             </CardTitle>
@@ -177,10 +259,10 @@ export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsP
             <form action={updateMonthlyGoalAction}>
               <FieldGroup className="gap-4">
                 <Field className="gap-2">
-                  <FieldLabel htmlFor="monthlyGoalUsd">Monthly goal (USD)</FieldLabel>
+                  <FieldLabel htmlFor="monthlyGoalAmount">Monthly goal amount</FieldLabel>
                   <Input
-                    id="monthlyGoalUsd"
-                    name="monthlyGoalUsd"
+                    id="monthlyGoalAmount"
+                    name="monthlyGoalAmount"
                     type="number"
                     min={0}
                     step="0.01"
@@ -188,7 +270,8 @@ export default async function OwnerSettingsPage({ searchParams }: OwnerSettingsP
                     required
                   />
                   <FieldDescription>
-                    This goal drives the Sales dashboard daily target and month progress values.
+                    This goal drives the Sales dashboard daily target and month progress values in{" "}
+                    {data.currencyCode}.
                   </FieldDescription>
                 </Field>
                 <div className="flex justify-end">

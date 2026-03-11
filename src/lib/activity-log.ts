@@ -1,15 +1,12 @@
 import type { Prisma } from "@prisma/client";
 
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { prisma } from "@/lib/prisma";
+import { getStoreCurrencyCode } from "@/lib/store-setting";
 
 const dateTimeFormat = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
-});
-
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,8 +34,8 @@ export type OwnerActivityListResult = {
   totalInWindow: number;
 };
 
-function formatPrice(cents: number) {
-  return usd.format(cents / 100);
+function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode);
 }
 
 function paymentMethodLabel(value: "CASH" | "QR_CODE" | "CREDIT_CARD") {
@@ -102,6 +99,7 @@ export async function listOwnerActivity(input: {
   query: string;
   rangeDays: OwnerActivityRangeDays;
 }): Promise<OwnerActivityListResult> {
+  const currencyCode = await getStoreCurrencyCode();
   const limit = Math.max(1, Math.min(80, Math.trunc(input.limit)));
   const offset = Math.max(0, Math.trunc(input.offset));
   const query = input.query.trim();
@@ -387,7 +385,7 @@ export async function listOwnerActivity(input: {
       createdAtLabel: dateTimeFormat.format(sale.createdAt),
       id: `sale:${sale.id}`,
       kind: "sales" as const,
-      summary: `${formatPrice(sale.totalCents)} | ${paymentMethodLabel(sale.paymentMethod)} | ${sale._count.items} items`,
+      summary: `${formatPrice(sale.totalCents, currencyCode)} | ${paymentMethodLabel(sale.paymentMethod)} | ${sale._count.items} items`,
       title: `Checkout ${sale.id.slice(-8).toUpperCase()}`,
     })),
     ...stockMovements.flatMap((movement) => {
@@ -435,7 +433,7 @@ export async function listOwnerActivity(input: {
       createdAtLabel: dateTimeFormat.format(change.createdAt),
       id: `price:${change.id}`,
       kind: "price" as const,
-      summary: `${change.productName} (${change.sku}) | Sell ${formatPrice(change.previousPriceCents)}→${formatPrice(change.nextPriceCents)} | Cost ${formatPrice(change.previousCostCents)}→${formatPrice(change.nextCostCents)}`,
+      summary: `${change.productName} (${change.sku}) | Sell ${formatPrice(change.previousPriceCents, currencyCode)}→${formatPrice(change.nextPriceCents, currencyCode)} | Cost ${formatPrice(change.previousCostCents, currencyCode)}→${formatPrice(change.nextCostCents, currencyCode)}`,
       title: "Price Updated",
     })),
   ].sort((a, b) => {

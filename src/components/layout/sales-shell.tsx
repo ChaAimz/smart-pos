@@ -31,6 +31,7 @@ import Link from "next/link";
 import { LogoutMenuItem } from "@/components/layout/logout-menu-item";
 import { ContentShell } from "@/components/layout/content-shell";
 import { AppBrand } from "@/components/layout/app-brand";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -43,6 +44,7 @@ type WorkspaceMode = "sales" | "manage";
 
 type SalesShellProps = {
   children: React.ReactNode;
+  currencyCode: StoreCurrencyCode;
   userEmail: string;
   todaySalesCount: number;
   todayRevenueCents: number;
@@ -91,6 +93,7 @@ function TicketStatusIcon({ isLargeText }: { isLargeText: boolean }) {
 
 export function SalesShell({
   children,
+  currencyCode,
   userEmail,
   todaySalesCount,
   todayRevenueCents,
@@ -107,22 +110,10 @@ export function SalesShell({
 }: SalesShellProps) {
   const displayName = userEmail.split("@")[0];
   const initials = displayName.slice(0, 2).toUpperCase();
-  const todayRevenue = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(todayRevenueCents / 100);
-  const monthRevenue = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(thisMonthRevenueCents / 100);
-  const monthGoal = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(monthlyGoalCents / 100);
-  const todayGoal = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(todayGoalCents / 100);
+  const todayRevenue = formatCurrencyFromCents(todayRevenueCents, currencyCode);
+  const monthRevenue = formatCurrencyFromCents(thisMonthRevenueCents, currencyCode);
+  const monthGoal = formatCurrencyFromCents(monthlyGoalCents, currencyCode);
+  const todayGoal = formatCurrencyFromCents(todayGoalCents, currencyCode);
   const salesModeHref = `/sales?mode=sales&text=${isLargeText ? "large" : "normal"}`;
   const manageModeHref = `/sales?mode=manage&text=${isLargeText ? "large" : "normal"}`;
   const toggleLargeTextHref = `/sales?mode=${workspaceMode}&text=${isLargeText ? "normal" : "large"}`;
@@ -130,23 +121,17 @@ export function SalesShell({
     {
       label: "Cash",
       icon: Wallet,
-      value: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-        todayPaymentBreakdownCents.cash / 100
-      ),
+      value: formatCurrencyFromCents(todayPaymentBreakdownCents.cash, currencyCode),
     },
     {
       label: "QR Code",
       icon: QrCode,
-      value: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-        todayPaymentBreakdownCents.qrCode / 100
-      ),
+      value: formatCurrencyFromCents(todayPaymentBreakdownCents.qrCode, currencyCode),
     },
     {
       label: "Credit Card",
       icon: CreditCard,
-      value: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-        todayPaymentBreakdownCents.creditCard / 100
-      ),
+      value: formatCurrencyFromCents(todayPaymentBreakdownCents.creditCard, currencyCode),
     },
   ] as const;
   const dailyGoalMet = todayGoalCents > 0 && todayRevenueCents >= todayGoalCents;

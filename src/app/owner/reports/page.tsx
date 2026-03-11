@@ -17,7 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireOwnerSession } from "@/lib/owner-session";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { prisma } from "@/lib/prisma";
+import { getStoreCurrencyCode } from "@/lib/store-setting";
 
 type OwnerReportsPageProps = {
   searchParams: Promise<{
@@ -28,6 +30,7 @@ type OwnerReportsPageProps = {
 
 type ReportData = {
   averageTicketCents: number;
+  currencyCode: StoreCurrencyCode;
   dailySummary: Array<{
     dateKey: string;
     revenueCents: number;
@@ -45,11 +48,6 @@ type ReportData = {
   }>;
 };
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
 const dateFormat = new Intl.DateTimeFormat("en-CA", {
   timeZone: "UTC",
   year: "numeric",
@@ -57,8 +55,8 @@ const dateFormat = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-function formatPrice(cents: number) {
-  return usd.format(cents / 100);
+function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode);
 }
 
 function parseDateInput(value: string | undefined) {
@@ -118,6 +116,7 @@ function getDateRange(fromValue: string | undefined, toValue: string | undefined
 
 async function getReportData(from: Date, toExclusive: Date): Promise<ReportData> {
   try {
+    const currencyCodePromise = getStoreCurrencyCode();
     const [sales, saleItems] = await prisma.$transaction([
       prisma.sale.findMany({
         where: {
@@ -209,9 +208,11 @@ async function getReportData(from: Date, toExclusive: Date): Promise<ReportData>
     const dailySummary = Array.from(dailyMap.entries())
       .map(([dateKey, value]) => ({ dateKey, ...value }))
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const currencyCode = await currencyCodePromise;
 
     return {
       averageTicketCents,
+      currencyCode,
       dailySummary,
       dbStatus: "up",
       revenueCents,
@@ -221,6 +222,7 @@ async function getReportData(from: Date, toExclusive: Date): Promise<ReportData>
   } catch {
     return {
       averageTicketCents: 0,
+      currencyCode: "ZAR",
       dailySummary: [],
       dbStatus: "down",
       revenueCents: 0,
@@ -281,13 +283,13 @@ export default async function OwnerReportsPage({
           <Card className="py-4">
             <CardHeader>
               <CardDescription>Revenue</CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.revenueCents)}</CardTitle>
+              <CardTitle className="text-3xl">{formatPrice(data.revenueCents, data.currencyCode)}</CardTitle>
             </CardHeader>
           </Card>
           <Card className="py-4">
             <CardHeader>
               <CardDescription>Average Ticket</CardDescription>
-              <CardTitle className="text-3xl">{formatPrice(data.averageTicketCents)}</CardTitle>
+              <CardTitle className="text-3xl">{formatPrice(data.averageTicketCents, data.currencyCode)}</CardTitle>
             </CardHeader>
           </Card>
         </section>
@@ -323,7 +325,7 @@ export default async function OwnerReportsPage({
                         <TableCell className="text-muted-foreground">{product.sku}</TableCell>
                         <TableCell className="text-right">{product.quantity}</TableCell>
                         <TableCell className="text-right">
-                          {formatPrice(product.revenueCents)}
+                          {formatPrice(product.revenueCents, data.currencyCode)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -361,7 +363,7 @@ export default async function OwnerReportsPage({
                         <TableCell className="font-medium">{day.dateKey}</TableCell>
                         <TableCell className="text-right">{day.salesCount}</TableCell>
                         <TableCell className="text-right">
-                          {formatPrice(day.revenueCents)}
+                          {formatPrice(day.revenueCents, data.currencyCode)}
                         </TableCell>
                       </TableRow>
                     ))

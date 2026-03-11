@@ -9,8 +9,22 @@ import {
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+function getRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+
+  if (!host) {
+    return requestUrl.origin;
+  }
+
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
+  const proto = forwardedProto || requestUrl.protocol.replace(":", "");
+  return `${proto}://${host}`;
+}
+
 function toLoginUrl(request: Request, errorCode: string) {
-  const url = new URL("/login", request.url);
+  const url = new URL("/login", getRequestOrigin(request));
   url.searchParams.set("error", errorCode);
   return url;
 }
@@ -70,9 +84,12 @@ export async function POST(request: Request) {
     role: user.role,
   });
 
-  const response = NextResponse.redirect(new URL(getHomePathForRole(user.role), request.url), {
-    status: 303,
-  });
+  const response = NextResponse.redirect(
+    new URL(getHomePathForRole(user.role), getRequestOrigin(request)),
+    {
+      status: 303,
+    }
+  );
 
   response.cookies.set({
     name: SESSION_COOKIE_NAME,

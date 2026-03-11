@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { type AppUserRole } from "@/lib/auth";
+import { formatCurrencyFromCents, type StoreCurrencyCode } from "@/lib/currency";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,11 +71,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
 type PaymentMethod = "cash" | "qr_code" | "credit_card";
 type WorkspaceMode = "sales" | "manage";
 type AdjustmentDirection = "increase" | "decrease";
@@ -92,6 +88,7 @@ type ProductSummary = {
 };
 
 type SalesWorkspaceProps = {
+  currencyCode: StoreCurrencyCode;
   workspaceMode: WorkspaceMode;
   isLargeText: boolean;
   userRole: AppUserRole;
@@ -122,8 +119,8 @@ type TicketItem = {
   unitPriceCents: number;
 };
 
-function formatPrice(cents: number) {
-  return usd.format(cents / 100);
+function formatPrice(cents: number, currencyCode: StoreCurrencyCode) {
+  return formatCurrencyFromCents(cents, currencyCode);
 }
 
 function createIdempotencyKey() {
@@ -143,6 +140,7 @@ function formatSaleReference(saleId?: string) {
 }
 
 export function SalesWorkspace({
+  currencyCode,
   workspaceMode,
   isLargeText,
   userRole,
@@ -478,8 +476,8 @@ export function SalesWorkspace({
       const saleRef = formatSaleReference(payload?.sale?.id);
       toast.success("Payment completed", {
         description: saleRef
-          ? `Receipt #${saleRef} created. Total ${formatPrice(saleTotal)}.`
-          : `Receipt created. Total ${formatPrice(saleTotal)}.`,
+          ? `Receipt #${saleRef} created. Total ${formatPrice(saleTotal, currencyCode)}.`
+          : `Receipt created. Total ${formatPrice(saleTotal, currencyCode)}.`,
       });
       router.refresh();
     } catch {
@@ -702,7 +700,7 @@ export function SalesWorkspace({
                   isLargeText && "text-4xl"
                 )}
               >
-                {formatPrice(subtotalCents)}
+                {formatPrice(subtotalCents, currencyCode)}
               </p>
               <p
                 className={cn(
@@ -799,7 +797,7 @@ export function SalesWorkspace({
                 isLargeText && "text-4xl"
               )}
             >
-              {formatPrice(subtotalCents)}
+              {formatPrice(subtotalCents, currencyCode)}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -1003,7 +1001,7 @@ export function SalesWorkspace({
                                     isLargeText && "text-lg"
                                   )}
                                 >
-                                  {formatPrice(product.priceCents)}
+                                  {formatPrice(product.priceCents, currencyCode)}
                                 </TypographyP>
                               </CommandItem>
                             ))}
@@ -1127,7 +1125,7 @@ export function SalesWorkspace({
                                 isLargeText && "text-lg"
                               )}
                             >
-                              {formatPrice(item.unitPriceCents)}
+                              {formatPrice(item.unitPriceCents, currencyCode)}
                             </TypographyP>
                             <div className="flex items-center justify-center gap-1.5">
                               <Button
@@ -1166,7 +1164,7 @@ export function SalesWorkspace({
                                 isLargeText && "text-lg"
                               )}
                             >
-                              {formatPrice(lineTotalCents)}
+                              {formatPrice(lineTotalCents, currencyCode)}
                             </TypographyP>
                             <Button
                               variant="ghost"
@@ -1202,7 +1200,7 @@ export function SalesWorkspace({
                     </Badge>
                   </div>
                   <TypographyP className={cn("text-2xl font-semibold tabular-nums", isLargeText && "text-3xl")}>
-                    {formatPrice(subtotalCents)}
+                    {formatPrice(subtotalCents, currencyCode)}
                   </TypographyP>
                 </div>
                 <div className="mt-4">
@@ -1559,7 +1557,7 @@ export function SalesWorkspace({
             <div className="min-w-0 flex-1">
               <TypographySmall className="text-sm text-muted-foreground">Cart Summary</TypographySmall>
               <TypographyP className={cn("text-lg font-semibold leading-6", isLargeText && "text-xl leading-7")}>
-                Subtotal {formatPrice(subtotalCents)}
+                Subtotal {formatPrice(subtotalCents, currencyCode)}
               </TypographyP>
             </div>
             <div className="flex flex-1">

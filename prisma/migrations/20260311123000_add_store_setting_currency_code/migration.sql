@@ -1,0 +1,2 @@
+ALTER TABLE "StoreSetting"
+ADD COLUMN "currencyCode" TEXT NOT NULL DEFAULT 'ZAR';

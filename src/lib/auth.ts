@@ -83,9 +83,17 @@ export async function verifyPassword(
 }
 
 export function getSessionCookieOptions() {
+  const secureCookieOverride = process.env.SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  const secure =
+    secureCookieOverride === "true"
+      ? true
+      : secureCookieOverride === "false"
+        ? false
+        : process.env.NODE_ENV === "production";
+
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax" as const,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
